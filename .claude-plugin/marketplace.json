@@ -1,0 +1,17 @@
+{
+  "name": "agentsystem",
+  "owner": {
+    "name": "webdevcody"
+  },
+  "metadata": {
+    "description": "AgentSystem skill collection — feature delivery, debugging, planning, UX, and code-quality skills.",
+    "version": "0.47.0"
+  },
+  "plugins": [
+    {
+      "name": "agentsystem-core",
+      "source": "./plugins/agentsystem-core",
+      "description": "The full engineering pipeline — feature delivery, debugging, PR workflow, UX polish, planning, backend, releases, and reviewer subagents."
+    }
+  ]
+}

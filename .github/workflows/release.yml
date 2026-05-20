@@ -1,0 +1,59 @@
+# Release workflow: publishes the CLI to npm so users can install via
+# `npx @agentsystemlabs/core`, then creates a GitHub Release for the tag.
+#
+# Auth: uses npm Trusted Publishers (OIDC) — no NPM_TOKEN secret required.
+# Configure at https://www.npmjs.com/package/@agentsystemlabs/core/access
+#
+# Triggered by pushing a tag matching v* (e.g. v0.27.0).
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Upgrade npm (Trusted Publishers requires >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync npm version to tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "${VERSION}" --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
