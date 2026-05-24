@@ -28,9 +28,11 @@ For users not on Claude Code — Claude Agent SDK, Cursor, custom agents, or any
 npx @agentsystemlabs/core init                                    # → ./.claude/{skills,agents}/
 npx @agentsystemlabs/core init --harness codex                    # → ./.codex/{skills,agents}/
 npx @agentsystemlabs/core init --harness cursor                   # → ./.cursor/{skills,agents}/
+npx @agentsystemlabs/core init --harness opencode                 # → ./.opencode/{skills,agents}/
 npx @agentsystemlabs/core init --global                           # → ~/.claude/{skills,agents}/
 npx @agentsystemlabs/core init --harness codex --global           # → ~/.codex/{skills,agents}/
 npx @agentsystemlabs/core init --harness cursor --global          # → ~/.cursor/{skills,agents}/
+npx @agentsystemlabs/core init --harness opencode --global        # → ~/.config/opencode/{skills,agents}/
 npx @agentsystemlabs/core init --plugin core                      # subset (short name)
 npx @agentsystemlabs/core init --dest ./my-skills                 # custom skills path
 npx @agentsystemlabs/core init --skip-agents                      # skills only, no subagents
@@ -42,7 +44,18 @@ npm install -g @agentsystemlabs/core
 agentsystem init
 ```
 
-Each skill lands as `<harness-root>/skills/<skill-name>/SKILL.md` (with its `references/` folder if present), so any agent that reads SKILL.md format picks them up directly. Subagents land in parallel at `<harness-root>/agents/<agent-name>.<ext>` — `.md` for Claude Code and Cursor (which read the same format), `.toml` for Codex (auto-converted from the source `.md` with descriptions truncated to Codex's 1024-char limit). The supported harnesses are `claude` (alias: `claude-code`), `codex`, and `cursor` (alias: `cursor-cli`); `--dest` overrides the skills path and `--agents-dest` overrides the subagents path. By default `init` skips files that already exist — pass `--force` to overwrite. The `--plugin` flag accepts short names (e.g., `core` for `agentsystem-core`), can be repeated, or comma-separated. Pass `--skip-agents` to install only the skills.
+Each skill lands as `<harness-root>/skills/<skill-name>/SKILL.md` (with its `references/` folder if present), so any agent that reads SKILL.md format picks them up directly. Subagents land in parallel at `<harness-root>/agents/<agent-name>.<ext>` — `.md` for Claude Code and Cursor (which read the same format), `.toml` for Codex (auto-converted from the source `.md` with descriptions truncated to Codex's 1024-char limit), and OpenCode-native `.md` for OpenCode (adds `mode: subagent` and read-only permissions). The supported harnesses are `claude` (alias: `claude-code`), `codex`, `cursor` (alias: `cursor-cli`), and `opencode`; `--dest` overrides the skills path and `--agents-dest` overrides the subagents path. By default `init` skips files that already exist — pass `--force` to overwrite. The `--plugin` flag accepts short names (e.g., `core` for `agentsystem-core`), can be repeated, or comma-separated. Pass `--skip-agents` to install only the skills.
+
+### OpenCode
+
+[OpenCode](https://opencode.ai) can run alongside Codex, Copilot, and OpenCode Go plan in the same project. Install AgentSystem skills and subagents into OpenCode's native layout:
+
+```bash
+npx @agentsystemlabs/core init --harness opencode                 # project: .opencode/{skills,agents}/
+npx @agentsystemlabs/core init --harness opencode --global          # global: ~/.config/opencode/{skills,agents}/
+```
+
+Skills are discovered from `.opencode/skills/*/SKILL.md` and loaded on demand via OpenCode's `skill` tool. Subagents are written as markdown agents with `mode: subagent` so primary agents (Build, Plan) can invoke them via `@mention` or the Task tool. See the [OpenCode agents](https://opencode.ai/docs/agents/), [skills](https://opencode.ai/docs/skills/), and [plugins](https://opencode.ai/docs/plugins/) docs for configuration beyond the install step.
 
 ## Autopilot — start here
 

@@ -1,6 +1,7 @@
 import { mkdirSync, existsSync, cpSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { convertAgentToCodexToml, normalizeCodexSkill } from '../lib/codex.js';
+import { convertAgentToOpencodeMd, normalizeOpencodeSkill } from '../lib/opencode.js';
 import { resolveAgentsDest, resolveDest, resolveHarness } from '../lib/paths.js';
 import {
   discoverAgents,
@@ -59,6 +60,8 @@ export async function initCommand(opts) {
     cpSync(dir, target, { recursive: true, force: true });
     if (harness.id === 'codex') {
       normalizeCodexSkill(join(target, 'SKILL.md'), skill);
+    } else if (harness.id === 'opencode') {
+      normalizeOpencodeSkill(join(target, 'SKILL.md'), skill);
     }
     console.log(`  ok     skill ${plugin}:${skill}`);
     skillsInstalled++;
@@ -82,6 +85,8 @@ export async function initCommand(opts) {
       }
       if (harness.agentFormat === 'toml') {
         convertAgentToCodexToml(file, target, agent);
+      } else if (harness.id === 'opencode') {
+        convertAgentToOpencodeMd(file, target, agent);
       } else {
         copyFileSync(file, target);
       }

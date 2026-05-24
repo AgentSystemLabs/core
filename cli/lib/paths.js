@@ -32,6 +32,16 @@ const HARNESS_DEFINITIONS = {
     agentsDir: ['.cursor', 'agents'],
     agentFormat: 'md',
   },
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode',
+    aliases: ['opencode', 'open-code'],
+    skillsDir: ['.opencode', 'skills'],
+    agentsDir: ['.opencode', 'agents'],
+    globalSkillsDir: ['.config', 'opencode', 'skills'],
+    globalAgentsDir: ['.config', 'opencode', 'agents'],
+    agentFormat: 'md',
+  },
 };
 
 export function supportedHarnesses() {
@@ -53,16 +63,32 @@ export function resolveHarness(rawHarness = 'claude') {
   return harness;
 }
 
-export function resolveDest({ global, dest, harness }) {
-  if (dest) return resolve(process.cwd(), dest);
+function resolveHarnessPath({ global, customDest, harness, projectSegments, globalSegments }) {
+  if (customDest) return resolve(process.cwd(), customDest);
   const resolvedHarness = resolveHarness(harness);
   const base = global ? homedir() : process.cwd();
-  return resolve(base, ...resolvedHarness.skillsDir);
+  const segments = global
+    ? resolvedHarness[globalSegments] ?? resolvedHarness[projectSegments]
+    : resolvedHarness[projectSegments];
+  return resolve(base, ...segments);
+}
+
+export function resolveDest({ global, dest, harness }) {
+  return resolveHarnessPath({
+    global,
+    customDest: dest,
+    harness,
+    projectSegments: 'skillsDir',
+    globalSegments: 'globalSkillsDir',
+  });
 }
 
 export function resolveAgentsDest({ global, agentsDest, harness }) {
-  if (agentsDest) return resolve(process.cwd(), agentsDest);
-  const resolvedHarness = resolveHarness(harness);
-  const base = global ? homedir() : process.cwd();
-  return resolve(base, ...resolvedHarness.agentsDir);
+  return resolveHarnessPath({
+    global,
+    customDest: agentsDest,
+    harness,
+    projectSegments: 'agentsDir',
+    globalSegments: 'globalAgentsDir',
+  });
 }

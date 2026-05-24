@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const MAX_CODEX_DESCRIPTION_LENGTH = 1024;
 
-function splitFrontmatter(content) {
+export function splitFrontmatter(content) {
   const lines = content.split(/\r?\n/);
   if (lines[0] !== '---') return null;
 
@@ -15,7 +15,7 @@ function splitFrontmatter(content) {
   };
 }
 
-function readScalar(lines, key) {
+export function readScalar(lines, key) {
   const prefix = `${key}:`;
   const line = lines.find(candidate => candidate.startsWith(prefix));
   if (!line) return null;
@@ -30,7 +30,7 @@ function readScalar(lines, key) {
   return value;
 }
 
-function truncateDescription(description) {
+export function truncateDescription(description) {
   if (description.length <= MAX_CODEX_DESCRIPTION_LENGTH) return description;
 
   const suffix = '...';
