@@ -3,4 +3,5 @@ node_modules/
 .DS_Store
 .codex/
 .cursor/
+.opencode/
 .claude/settings.local.json
