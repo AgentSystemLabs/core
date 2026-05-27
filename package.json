@@ -10,8 +10,9 @@
     "access": "public"
   },
   "scripts": {
+    "test": "node --test tests/**/*.test.js",
     "check:routing": "node scripts/check-skill-routing.mjs",
-    "prepublishOnly": "node cli/index.js --version"
+    "prepublishOnly": "npm test && node cli/index.js --version"
   },
   "files": [
     "cli",

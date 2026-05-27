@@ -35,6 +35,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run tests
+        run: npm test
+
+      - name: Check skill routing
+        run: npm run check:routing
+
       - name: Compute version
         id: version
         run: |
