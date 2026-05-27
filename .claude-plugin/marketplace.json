@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "AgentSystem skill collection — feature delivery, debugging, planning, UX, and code-quality skills.",
-    "version": "0.48.1"
+    "version": "0.48.2"
   },
   "plugins": [
     {
