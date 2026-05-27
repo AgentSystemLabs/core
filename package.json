@@ -1,6 +1,6 @@
 {
   "name": "@agentsystemlabs/core",
-  "version": "0.49.0",
+  "version": "0.50.0",
   "description": "Install AgentSystem skills into any project — works with Claude Code, Codex, Cursor, OpenCode, or any tool that reads SKILL.md files.",
   "type": "module",
   "bin": {
