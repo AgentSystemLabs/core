@@ -1,6 +1,6 @@
 {
   "name": "@agentsystemlabs/core",
-  "version": "0.50.0",
+  "version": "0.50.1",
   "description": "Install AgentSystem skills into any project — works with Claude Code, Codex, Cursor, OpenCode, or any tool that reads SKILL.md files.",
   "type": "module",
   "bin": {
@@ -10,7 +10,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test tests/**/*.test.js",
+    "test": "node --test \"tests/*.test.js\"",
     "check:routing": "node scripts/check-skill-routing.mjs",
     "prepublishOnly": "npm test && node cli/index.js --version"
   },
