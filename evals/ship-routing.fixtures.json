@@ -1,0 +1,67 @@
+[
+  {
+    "prompt": "add a stripe webhook handler",
+    "intent": "CREATE",
+    "route": "add-feature",
+    "mode": "production",
+    "note": "webhook + payments = high-risk signal → production"
+  },
+  {
+    "prompt": "build a settings page",
+    "intent": "CREATE",
+    "route": "add-feature",
+    "mode": "balanced"
+  },
+  {
+    "prompt": "also send a confirmation email when an order ships",
+    "intent": "EVOLVE",
+    "route": "modify-feature",
+    "mode": "production",
+    "note": "email/notification = high-risk signal"
+  },
+  {
+    "prompt": "make this button green",
+    "intent": "EVOLVE",
+    "route": "modify-feature",
+    "mode": "fast",
+    "note": "cosmetic single-element change routes EVOLVE with mode=fast"
+  },
+  {
+    "prompt": "give the dashboard a UX pass",
+    "intent": "POLISH",
+    "route": "polish-ui",
+    "mode": "balanced"
+  },
+  {
+    "prompt": "rip out the legacy invitation system",
+    "intent": "REMOVE",
+    "route": "remove-feature",
+    "mode": "balanced"
+  },
+  {
+    "prompt": "the webhook never fires after I click submit",
+    "intent": "FIX",
+    "route": "fix-bug",
+    "mode": "balanced"
+  },
+  {
+    "prompt": "production-readiness pass on the whole repo",
+    "intent": "AUDIT",
+    "route": "audit",
+    "mode": "production"
+  },
+  {
+    "prompt": "refactor this module to reduce duplication",
+    "intent": "REFACTOR",
+    "route": "simplify",
+    "mode": "balanced",
+    "note": "outside the six intents; routed via ship's refactor/test pointer"
+  },
+  {
+    "prompt": "write tests for the slug parser",
+    "intent": "TEST",
+    "route": "write-tests",
+    "mode": "balanced",
+    "note": "outside the six intents; routed via ship's refactor/test pointer"
+  }
+]

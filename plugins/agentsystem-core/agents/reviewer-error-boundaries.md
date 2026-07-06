@@ -35,9 +35,9 @@ Filter to: `src/routes/`, `src/components/`, `src/hooks/`, `src/queries/`, `src/
 #### Detector A — Route loader without errorComponent (**HIGH**)
 
 ```bash
-rg -n --type tsx -F 'createFileRoute(' <changed-route-files>
-rg -n --type tsx -F 'loader:' <changed-route-files>
-rg -n --type tsx -F 'errorComponent:' <changed-route-files>
+rg -n --type ts -F 'createFileRoute(' <changed-route-files>
+rg -n --type ts -F 'loader:' <changed-route-files>
+rg -n --type ts -F 'errorComponent:' <changed-route-files>
 ```
 
 If a route declares a `loader` but no `errorComponent` (and no project-level default error component is detected): **HIGH**. A failed loader silently shows nothing.
@@ -47,28 +47,30 @@ Mark `auto-fixable: true` only when the project has an existing `errorComponent`
 #### Detector B — Mutation without `onError` AND without a global error handler (**HIGH**)
 
 ```bash
-rg -n --type tsx -F 'useMutation(' <scope>
+rg -n --type ts -F 'useMutation(' <scope>
 rg -n --type ts  -F 'useMutation(' <scope>
 ```
 
 For each call: check for `onError`. If absent, check the project's `QueryClient` config for a default `mutations.onError` (usually `src/lib/query-client.ts`). If neither covers the mutation: **HIGH** — user submits, request fails, UI shows nothing, form may be in a broken state.
 
-#### Detector C — Form button not disabled during submit (**MEDIUM**)
+#### Detector C — Submit button on the FAILURE path (**MEDIUM**)
+
+The pure "submit button not `disabled={isPending}` during submit" check belongs to **`reviewer-loading-states`** (its Detector A) — do not duplicate it here. If you notice it, defer with a one-line pointer.
+
+What IS yours is the **failure** path — a failed submit that leaves the button locked forever, or re-enables it into an unsafe double-submit:
 
 ```bash
-rg -n --type tsx -F '<form ' <scope>
-rg -n --type tsx -F 'onSubmit' <scope>
+rg -n --type ts -F '<form ' <scope>
+rg -n --type ts -F 'onSubmit' <scope>
 ```
 
-For each form using a mutation: check the submit `<button>` for `disabled={isPending}` (or alias). If missing AND the mutation variable is unambiguously named (`mutation.isPending`, `isPending`, `isSubmitting`): **MEDIUM**, `auto-fixable: true`.
-
-Also check: re-enable on error. If `disabled={isPending && !isError}` or similar guard is missing, a failed submit may lock the button forever — flag **MEDIUM** with `auto-fixable: false` (semantics are subtle: retry-friendly vs. rate-limited vs. terminal "show contact support" all look similar).
+If a guard like `disabled={isPending && !isError}` is missing so a failed submit locks the button forever, OR the button re-enables into a non-idempotent retry (double-submit on failure): **MEDIUM**, `auto-fixable: false` — the semantics are subtle (retry-friendly vs. rate-limited vs. terminal "show contact support" all look similar), so the parent decides.
 
 #### Detector D — Server error becomes a generic toast with no retry path (**MEDIUM**)
 
 ```bash
-rg -n --type tsx -F 'toast.error' <scope>
-rg -n --type tsx -F 'toast(' <scope>
+rg -n --type ts -F 'toast.error' <scope>
+rg -n --type ts -F 'toast(' <scope>
 ```
 
 For each error toast: check whether (a) the message is a hard-coded generic ("Something went wrong"), and (b) there's a retry affordance (button, refetch hook, anything). If both fail: **MEDIUM**, `auto-fixable: false` — adding a retry button without understanding the underlying mutation produces broken retries.
@@ -76,7 +78,7 @@ For each error toast: check whether (a) the message is a hard-coded generic ("So
 #### Detector E — Promise rejection unhandled in non-React async paths (**HIGH**)
 
 ```bash
-rg -n --type ts -E 'await\s+\w' <scope>
+rg -n --type ts -e 'await\s+\w' <scope>
 rg -n --type ts -F '.then(' <scope>
 ```
 
@@ -84,7 +86,7 @@ For each top-level await or `.then`: trace whether the enclosing function has tr
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report in this format. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Error-boundary scan — <N> findings

@@ -1,6 +1,6 @@
 ---
 name: reviewer-authz
-description: Read-only audit of authorization on every server-side entry point — TanStack Start server functions in src/fn/, HTTP route handlers, tRPC procedures, GraphQL resolvers, webhook handlers, queue workers, IPC handlers — for missing or wrong access checks. Detects handlers with no auth check at all (anonymous access), handlers that check identity but not ownership (IDOR), handlers that grant by role-presence without resource scoping, admin gates depending on client-supplied flags, public endpoints reading user-scoped data via session, and webhook handlers without signature verification. Returns severity-ranked findings (critical/high/medium/low) with the specific check that's missing and a concrete fix snippet using the project's existing auth helpers; never edits files. Sibling concern to reviewer-security-regression (broader app security) — keep scopes separate. Use when add-feature, modify-feature, or fix-bug runs after a change to a server entry point or auth flow.
+description: Read-only audit of authorization on every server-side entry point — TanStack Start server functions in src/fn/, HTTP route handlers, tRPC procedures, GraphQL resolvers, webhook handlers, queue workers, IPC handlers — for missing or wrong access checks. Detects handlers with no auth check at all (anonymous access), handlers that check identity but not ownership (IDOR), handlers that grant by role-presence without resource scoping, admin gates depending on client-supplied flags, and public endpoints reading user-scoped data via session (webhook signature verification is deferred to reviewer-security-regression, which owns it). Returns severity-ranked findings (critical/high/medium/low, all auto-fixable:false) with the specific check that's missing and a concrete fix snippet using the project's existing auth helpers; never edits files. Sibling concern to reviewer-security-regression (broader app security) — keep scopes separate. Use when add-feature, modify-feature, or fix-bug runs after a change to a server entry point or auth flow.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -73,9 +73,9 @@ Flag must come from the session, not the input.
 
 Role checked (`requireAdmin()`) but the action targets a specific resource that admins of one org shouldn't access in another.
 
-#### MEDIUM — webhook with no signature verification
+#### Webhook signature verification — always defer
 
-Reads webhook body and updates DB; no signature verification against the provider's secret. Defer pure signature-verification gaps to `reviewer-security-regression` if both auditors run; if running alone, flag here.
+Webhook signature verification is **out of scope for authz** — always defer it to `reviewer-security-regression`, which owns it unconditionally at HIGH. A one-shot subagent can't know whether the security reviewer was also dispatched, so "defer only if both run" is unsatisfiable — just defer, every time. If you notice a webhook handler reading its body with no signature check, add a one-line pointer under a **Deferred** note; do not rank it as an authz finding.
 
 #### MEDIUM — service endpoint with weak shared secret
 
@@ -87,51 +87,55 @@ Handler does `console.log`, sends analytics, or starts a job *before* the auth c
 
 ### Phase 4 — Return structured report
 
-Reply with ONLY this format. Do not preamble.
+Reply with ONLY the report, in the shared markdown format from
+[`../findings-contract.md`](../findings-contract.md) (severity scale
+CRITICAL/HIGH/MEDIUM/LOW; every finding ends with an `auto-fixable` line). **Every authz finding is
+`auto-fixable: false`** — an auth check inserted mechanically either over-restricts (legit users get
+403) or is bypassed by an earlier code path, so the parent applies each one with explicit user
+approval, one at a time.
 
 ```
-Authz Audit — <scope>
-─────────────────────
+## Authz scan — <N> findings
 
-CRITICAL (<count>)
-  src/fn/getPost.ts:14            — anonymous access; missing requireUser + ownership
-  src/fn/updateProject.ts:21      — IDOR; ownership not verified after requireUser
-  src/fn/deleteOrg.ts:9           — admin gate uses input.isAdmin (client-supplied)
+### CRITICAL — <count>
+1. **Anonymous access to user-scoped data** — `src/fn/getPost.ts:14`
+   - Reads a post by id with no session check; `postId` in input ⇒ User-scoped.
+   - Fix: `const user = await requireUser();` then verify `post.authorId === user.id` before returning (use the project's existing helper).
+   - auto-fixable: false
 
-HIGH (<count>)
-  src/fn/exportData.ts:33         — admin role checked, but org scoping missing
+2. **IDOR — identity present, ownership absent** — `src/fn/updateProject.ts:21`
+   - `requireUser()` runs, then updates by `input.projectId` with no ownership check.
+   - Fix: load the project and assert `project.ownerId === user.id` before the update.
+   - auto-fixable: false
 
-MEDIUM (<count>)
-  src/routes/api/webhooks/stripe.ts  — no signature verification
-  src/queues/processInvite.ts:8       — message body trusted without origin check
+### HIGH — <count>
+3. **Role checked but not resource-scoped** — `src/fn/exportData.ts:33`
+   - `requireAdmin()` passes, but org scoping is missing — an admin of one org can export another's.
+   - Fix: scope the query to the caller's org.
+   - auto-fixable: false
 
-OK (<count> handlers)
+### MEDIUM — <count>
+4. **Service endpoint with weak shared secret** — `src/queues/processInvite.ts:8`
+   - Message body trusted without an origin/secret check.
+   - Fix: verify the shared secret / signed envelope before processing.
+   - auto-fixable: false
 
-Total: <N> entry points, <M> findings.
+### LOW — <count>
+5. **Auth check after a side effect** — `src/fn/foo.ts:5`
+   - Analytics/job fires before the auth gate — information leak.
+   - Fix: move the auth check above the side effect.
+   - auto-fixable: false
 
-### Recommended fixes
-
-1. **`src/fn/getPost.ts:14`** (CRITICAL — anonymous access)
-   ```ts
-   const user = await requireUser();
-   const post = await db.query.posts.findFirst({ where: eq(posts.id, input.postId) });
-   if (!post || post.authorId !== user.id) throw notFound();
-   ```
-
-2. **`src/fn/updateProject.ts:21`** (CRITICAL — IDOR)
-   ```ts
-   const user = await requireUser();
-   const project = await db.query.projects.findFirst({ where: eq(projects.id, input.projectId) });
-   if (!project || project.ownerId !== user.id) throw forbidden();
-   await db.update(projects).set(input.patch).where(eq(projects.id, input.projectId));
-   ```
-
-(One fix snippet per finding, using the project's existing auth helpers — not generic examples.)
-
-No fixes applied — the parent applies one at a time with user approval.
+### Deferred
+- Webhook signature verification at `src/routes/api/webhooks/stripe.ts` → `reviewer-security-regression` (owns it at HIGH).
 ```
 
-If there are zero findings, return: `Authz Audit — <scope>: no findings across <N> entry points.`
+Give one concrete fix per finding using the project's **existing** auth helpers, not generic
+examples. If there are zero findings, return exactly: `No authz issues detected.`
+
+**Pair boundary.** This agent is the scan engine for the `agentsystem-core:audit-authz` skill — same
+detectors, same catalog. `audit-authz` is the interactive wrapper (confirm + apply one at a time);
+this subagent produces the findings. Keep the detector list in sync between the two.
 
 ---
 
@@ -140,7 +144,7 @@ If there are zero findings, return: `Authz Audit — <scope>: no findings across
 - **NEVER edit files.** Read-only audit. The parent applies fixes one at a time with explicit user approval — auth checks inserted in the wrong place either over-restrict (legitimate users get 403) or are bypassed at runtime.
 - **NEVER trust user identity claims from the request body or query.** Identity must come from session / cookie / verified JWT. `input.userId` is a target, not a credential.
 - **NEVER conclude a handler is safe because it calls `requireUser()`.** Verify ownership is checked for every resource named in input. `requireUser()` proves identity, not authorization.
-- **NEVER mark a webhook handler safe because it parses the payload with zod.** Verify signature validation against the provider's secret (`stripe-signature`, `x-hub-signature-256`, custom HMAC). Zod proves shape, not origin.
+- **NEVER rank a webhook signature-verification gap as an authz finding.** It belongs to `reviewer-security-regression` (HIGH), which owns it unconditionally — note the gap under a **Deferred** pointer and move on. (Zod proving shape is not origin verification, but the ranked finding isn't yours to make.)
 - **NEVER reason about authorization from the UI.** Examine server code only. Client-side hiding is not a security control.
 - **NEVER skip handlers that "look internal/test".** "Internal" is a deployment claim, not an enforced one — many breaches start with an "internal" admin endpoint reachable from public network.
 - **NEVER recommend a fix using a helper not already in the codebase.** Find and use existing helpers. If none exists, surface that as a separate finding rather than inventing one.

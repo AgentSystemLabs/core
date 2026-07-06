@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Whole-codebase tech-debt sweep. First maps architecture and data flow, then orchestrates every available audit/harden/cleanup skill (duplication, type safety, data integrity, security, contracts, error boundaries, loading states, a11y, concurrency, client-bundle, observability, perf, simplify) across the repo — not just the diff — to find and remove accumulated tech-debt. Produces an architecture summary, severity-ranked findings report, refactoring strategy, then applies mechanical fixes inline and gates structural fixes per-item. Use when the user says "audit the codebase", "understand this codebase", "refactor without behavior changes", "tech-debt sweep", "deep clean", "/audit", "find all the rot", "production-readiness pass", "full cleanup", or when ship routes here for a production-grade hardening pass. Skip for — focused diff-only reviews (use simplify), single-concern audits (call the specific `audit-*` skill directly), and any context where the user only wants a quick fix.
+description: Whole-codebase tech-debt sweep. First maps architecture and data flow, then orchestrates every available audit/harden/cleanup skill (duplication, type safety, data integrity, security, contracts, error boundaries, loading states, a11y, concurrency, client-bundle, observability, perf, simplify) across the repo — not just the diff — to find and remove accumulated tech-debt. Produces an architecture summary, severity-ranked findings report, refactoring strategy, then applies mechanical fixes inline and gates structural fixes per-item. Accepts `scope=<path>`, `mode=fast|balanced|production`, and `include=`/`skip=` (audit-skill names). Use when the user says "audit the codebase", "understand this codebase", "refactor without behavior changes", "tech-debt sweep", "deep clean", "/audit", "find all the rot", "production-readiness pass", "full cleanup", or when ship routes here for a production-grade hardening pass. Skip for — focused diff-only reviews (use simplify), single-concern audits (call the specific `audit-*` skill directly), and any context where the user only wants a quick fix.
 ---
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
@@ -21,8 +21,9 @@ A whole-codebase tech-debt sweep. The diff-scoped `simplify` and the per-concern
 
 **Inputs accepted from caller (e.g., `ship`):**
 - `scope=<path>` — narrow to a directory
+- `include=<csv>` — comma-separated audit-skill names to force-include even below their default mode tier
 - `skip=<csv>` — comma-separated list of audit skill names to skip
-- `mode=fast|balanced|production` — `fast` runs only `simplify` + typecheck/lint; `balanced` adds the high-leverage audits; `production` runs everything. Default `balanced` when invoked directly; honor caller-supplied mode otherwise.
+- `mode=fast|balanced|production` — `fast` runs only `simplify` + `harden-types` + typecheck/lint (the two "always" audits from Phase 4); `balanced` adds the high-leverage audits; `production` runs everything. Default `balanced` when invoked directly; honor caller-supplied mode otherwise.
 
 ---
 
@@ -60,12 +61,12 @@ Baseline failures get fixed first. Stacking refactors on top of a red baseline b
 
 ## Phase 4 — Parallel audit fan-out
 
-Launch the applicable audit skills concurrently via the `Skill` tool, each scoped to the agreed Phase 1 scope (not just the diff). Pass `mode=audit` so each skill knows it's running repo-wide and should not auto-fix.
+Dispatch the reviewer-* auditors **concurrently via the `Agent` tool** (parallel fan-out) and run the skill-based audits (`simplify`, `harden-types`) via the `Skill` tool. Note the mechanics: **`Skill` invocations are sequential — only `Agent` subagent dispatches run in parallel** — so the reviewer fan-out parallelizes while the two skill audits run one after the other. Scope every audit to the agreed Phase 1 scope (not just the diff): pass `scope=<Phase 1 path>` to the skills and describe the scope to each subagent. Tell each auditor it is running **repo-wide in report-only mode** — findings are consolidated in Phase 5 and applied under the Phase 6 gate, never auto-fixed inline here.
 
 **Host-portability fallback.** If the `Skill` tool is not available in the current session (OpenAI Codex and other non-Claude-Code hosts), Read each applicable skill's SKILL.md at `plugins/agentsystem-core/skills/<skill-name>/SKILL.md` and execute them sequentially in this turn, treating each as the next phase of work. Reviewer subagents (`reviewer-*`) still go through the `Agent` tool — most CLIs that lack `Skill` still have a general-purpose agent primitive, and you can pass the reviewer's SKILL.md path to it. Surface the degradation up-front: tell the user "Skill tool unavailable — audits will run inline, sequentially, without subagent isolation." Inline sequential execution is slower and loses fan-out parallelism, but the findings are still produced.
 
 **Always (every mode):**
-- `simplify` — DRY, magic numbers, naming, oversized files, parallel-enum drift, repeated literals (override default diff-only scope to Phase 1 scope)
+- `simplify` — DRY, magic numbers, naming, oversized files, parallel-enum drift, repeated literals. Invoke with `scope=<Phase 1 scope>` so it audits the agreed repo-wide scope instead of the diff (simplify accepts a caller-passed `scope=` for exactly this — no scope deadlock).
 - `harden-types` — strip `any`, dangerous casts, missing return types, missing boundary validation
 
 **Balanced and production:**
@@ -77,15 +78,16 @@ Launch the applicable audit skills concurrently via the `Skill` tool, each scope
 - **`reviewer-perf`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-perf`; isolates the read-heavy perf audit from the parent context). The `audit-perf` skill remains available as a manual entry point.
 
 **Production only (additionally):**
+- **`reviewer-authz`** (subagent — dispatch via `Agent(subagent_type=reviewer-authz)`). Missing-auth/IDOR is the **highest-severity class a production-readiness audit can find**, and `reviewer-security-regression` explicitly defers authorization — so authz must run as its own pass or it stays structurally invisible.
 - **`reviewer-security-regression`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-security-regression`; isolates the read-heavy security audit from the parent context).
 - **`reviewer-concurrency`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-concurrency`).
 - **`reviewer-client-bundle`** (subagent — dispatch via `Agent(subagent_type=reviewer-client-bundle)`).
-- **`reviewer-accessibility-regression`** (subagent — dispatch via `Agent(subagent_type=reviewer-accessibility-regression)`).
+- **`audit-a11y`** (skill — whole-app accessibility, invoked with `scope=<Phase 1 scope>`). Use `audit-a11y`, **not** `reviewer-accessibility-regression`, for the repo-wide pass: the reviewer is documented as changed-files-only and would under-scan a whole-repo audit.
 
 **Stack-conditional (auto-include when the stack matches):**
-- TanStack Start present → `code-enforce-route-data`, `code-enforce-layers`
+- TanStack Start present → promote `reviewer-contracts` (route ↔ loader/server-fn data drift) and `reviewer-client-bundle` (server/client layer boundary) into the fan-out even in balanced mode, since route-data and layer bugs are the dominant TanStack failure class.
 
-Honor `skip=` from the caller. Do not run audits the user explicitly excluded.
+Honor `include=` and `skip=` from the caller — `include=` force-adds a named audit even below its default mode tier; `skip=` removes one. Do not run audits the user explicitly excluded.
 
 ---
 

@@ -1,8 +1,11 @@
 ---
 name: utility-finder
 description: Read-only subagent that takes a function description (signature, behavior, or noun phrase like "format duration", "debounce", "parse markdown headers") and returns existing equivalents in the repo before the parent writes a new one. Returns ranked candidates with file:line refs, signature comparison, and a verdict (reuse / extend / write-new). Prevents duplication at the source — most duplication is created by agents who didn't look. Used by add-feature Phase 2 and Phase 7b duplication scan, and by modify-feature when adding a new helper. Never edits files.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
+model: haiku
 ---
+
+> **No shell.** You have Read, Grep, and Glob — no Bash. The `rg` / `fd` snippets below are search *patterns*; run them with the Grep and Glob tools.
 
 # utility-finder
 
@@ -42,11 +45,11 @@ Search broadly but cheaply. Run several queries:
 # Direct identifier matches (camelCase, kebab, snake)
 rg -n --type ts -F '<verb><Noun>' <repo>          # formatDuration
 rg -n --type ts -F '<noun><Verb>' <repo>          # durationFormat
-rg -n --type ts -E 'function (\w*<verb>\w*|\w*<noun>\w*)' <repo>
+rg -n --type ts -e 'function (\w*<verb>\w*|\w*<noun>\w*)' <repo>
 # Common alternate phrasings
-rg -n --type ts -E 'humanize|relative|timeAgo|fromNow' <repo>   # for duration
-rg -n --type ts -E 'sanitize|escape|cleanse' <repo>             # for sanitize
-rg -n --type ts -E 'debounce|throttle' <repo>                   # for debounce
+rg -n --type ts -e 'humanize|relative|timeAgo|fromNow' <repo>   # for duration
+rg -n --type ts -e 'sanitize|escape|cleanse' <repo>             # for sanitize
+rg -n --type ts -e 'debounce|throttle' <repo>                   # for debounce
 # Look in conventional util locations
 fd -t f -e ts 'utils|helpers|lib|common' <repo>/src
 ```

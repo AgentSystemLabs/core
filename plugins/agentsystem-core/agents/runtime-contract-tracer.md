@@ -1,8 +1,10 @@
 ---
 name: runtime-contract-tracer
 description: Read-only subagent that traces an integration end-to-end with file:line refs — trigger (user action → handler), dispatch (outbound call: HTTP, IPC, queue, file write, env injection), receive (server handler, listener, hook target), and observe (DB row, UI status, log line). Returns the 4-link trace as a structured artifact the parent uses to ground hypotheses. Used by fix-bug Step 1 to map silent integration failures, by add-feature and modify-feature integration-first lanes to plan runtime contracts before editing, and any time the parent needs to convert "should work but didn't" into a literal evidence trail. Never edits files, never asks the user to repro — only reads code and reports.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 ---
+
+> **No shell.** You have Read, Grep, and Glob — no Bash. The `rg` / `fd` snippets below are search *patterns*; run them with the Grep and Glob tools.
 
 # runtime-contract-tracer
 
@@ -40,8 +42,8 @@ Find the user-facing action or event that initiates the side effect:
 - A startup hook
 
 ```bash
-rg -n --type tsx --type ts -F '<feature-name>' <repo>
-rg -n --type tsx -E 'onClick=|onSubmit=' <relevant-files>
+rg -n --type ts -F '<feature-name>' <repo>
+rg -n --type ts -e 'onClick=|onSubmit=' <relevant-files>
 ```
 
 Cite the trigger with `file:line`. If you can't locate it: that absence IS the first link of the trace.
@@ -61,7 +63,7 @@ The outbound boundary where the action leaves the trigger's process:
 rg -n --type ts -F 'fetch(' <trigger-file-and-imports>
 rg -n --type ts -F 'createServerFn' <relevant-files>
 rg -n --type ts -F '.invoke(' <relevant-files>
-rg -n --type ts -F 'execSync\|exec\|spawn' <relevant-files>
+rg -n --type ts -e 'execSync|exec|spawn' <relevant-files>
 ```
 
 Cite the dispatch with `file:line`. Note explicitly:
@@ -98,9 +100,9 @@ Where the side effect becomes visible:
 - External resource created (Stripe customer, S3 object, email sent)
 
 ```bash
-rg -n --type ts -F '.insert(\|.update(' <receiver-file-and-imports>
-rg -n --type ts -F 'logger.\|console.' <receiver-files>
-rg -n --type ts -F 'invalidateQueries\|setQueryData' <receiver-files>
+rg -n --type ts -e '\.insert\(|\.update\(' <receiver-file-and-imports>
+rg -n --type ts -e 'logger\.|console\.' <receiver-files>
+rg -n --type ts -e 'invalidateQueries|setQueryData' <receiver-files>
 ```
 
 Cite the observation with `file:line`. If there is no log/observation site, that's a gap worth flagging — without it, future debugging requires guessing.

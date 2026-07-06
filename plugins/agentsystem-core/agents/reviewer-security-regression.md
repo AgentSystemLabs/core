@@ -39,16 +39,16 @@ Filter to source files. Skip `node_modules`, `dist`, `build`, lockfiles, generat
 
 ### Step 2 — Run seven detectors
 
-#### Detector A — Secret leaked to logs or client bundle (**HIGH**)
+#### Detector A — Secret leaked to logs or client bundle (**CRITICAL–HIGH**)
 
 ```bash
-rg -n --type ts -F 'process.env.' <scope> | rg -E 'console\.|logger\.|log\('
-rg -n --type ts -E 'console\.(log|info|warn|error)\([^)]*\b(SECRET|TOKEN|KEY|PASSWORD|API_KEY|PRIVATE)' <scope>
-rg -n --type tsx -F 'process.env' <scope>
+rg -n --type ts -F 'process.env.' <scope> | rg -e 'console\.|logger\.|log\('
+rg -n --type ts -e 'console\.(log|info|warn|error)\([^)]*\b(SECRET|TOKEN|KEY|PASSWORD|API_KEY|PRIVATE)' <scope>
+rg -n --type ts -F 'process.env' <scope>
 rg -n --type ts  -F 'process.env' <scope> | rg -F 'use client'
 ```
 
-For each hit: classify the env var as secret-like (`SECRET|TOKEN|KEY|PASSWORD|PRIVATE|DSN`) and confirm the file is reachable from the client bundle. **HIGH** for confirmed client leakage; **HIGH** for any logged secret value (not just the var name).
+For each hit: classify the env var as secret-like (`SECRET|TOKEN|KEY|PASSWORD|PRIVATE|DSN`) and confirm the file is reachable from the client bundle. **CRITICAL** for a live/production secret **value** leaked to the client bundle or logged (immediate credential compromise — the pack-wide CRITICAL bar of "leaks data / enables an unauthorized actor"). **HIGH** when it's a non-production secret, or only the var *name* (not its value) appears without confirmed client reachability.
 
 #### Detector B — Webhook handler without signature verification (**HIGH**)
 
@@ -61,8 +61,8 @@ For each handler, look in the same file or its imports for a verification call. 
 #### Detector C — Server-Side Request Forgery (**HIGH**)
 
 ```bash
-rg -n --type ts -E 'fetch\(\s*\w' <scope>
-rg -n --type ts -E '(axios|got|http)\.(get|post|put|delete|patch)\(\s*\w' <scope>
+rg -n --type ts -e 'fetch\(\s*\w' <scope>
+rg -n --type ts -e '(axios|got|http)\.(get|post|put|delete|patch)\(\s*\w' <scope>
 ```
 
 Trace the URL argument to its origin. If user-controlled (request body/query/params) and there's no allowlist check (URL.parse + hostname matches a fixed list) before the call: **HIGH**. If the trace bottoms out in a literal or a clearly server-only constant, mark safe. If it bottoms out at a request read with no allowlist, mark unsafe. If you can't fully trace, flag MEDIUM with "couldn't fully trace" — never claim "no SSRF" without tracing.
@@ -70,7 +70,7 @@ Trace the URL argument to its origin. If user-controlled (request body/query/par
 #### Detector D — Unsafe file upload / download (**HIGH–MEDIUM**)
 
 ```bash
-rg -n --type ts -E 'multer|formidable|busboy|uploadHandler|files?\.create|put\(.*Body' <scope>
+rg -n --type ts -e 'multer|formidable|busboy|uploadHandler|files?\.create|put\(.*Body' <scope>
 rg -n --type ts -F 'path.join(' <scope> | rg -F 'req\.|body\.|params\.|query\.'
 ```
 
@@ -79,7 +79,7 @@ Check for: missing extension/MIME allowlist; missing size limit; user-controlled
 #### Detector E — Dangerous HTML rendering (**HIGH**)
 
 ```bash
-rg -n --type tsx -F 'dangerouslySetInnerHTML' <scope>
+rg -n --type ts -F 'dangerouslySetInnerHTML' <scope>
 rg -n --type ts  -F '.innerHTML' <scope>
 rg -n --type ts  -F 'document.write' <scope>
 ```
@@ -89,9 +89,9 @@ Trace the value's origin. If it's a literal or comes from a sanitizer (DOMPurify
 #### Detector F — Open redirect / missing `rel="noopener"` (**MEDIUM–LOW**)
 
 ```bash
-rg -n --type ts -E 'redirect\(\s*\w' <scope>
-rg -n --type ts -E 'res\.redirect\(\s*\w' <scope>
-rg -n --type tsx -E 'target="_blank"' <scope>
+rg -n --type ts -e 'redirect\(\s*\w' <scope>
+rg -n --type ts -e 'res\.redirect\(\s*\w' <scope>
+rg -n --type ts -e 'target="_blank"' <scope>
 ```
 
 User-controlled redirect URL with no allowlist: **MEDIUM** open-redirect. `target="_blank"` without `rel="noopener noreferrer"`: **LOW** — flag as `auto-fixable: true` so the parent can apply the trivial fix.
@@ -102,17 +102,18 @@ For new public endpoints (no auth, or per-IP-friendly): login, signup, password 
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report in this format. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Security regression scan — <N> findings
 
-### HIGH — <count>
-1. **Secret reachable from client bundle: `STRIPE_SECRET_KEY`** — `<file>:<line>`
-   - File is imported by `<client-route>:<line>`.
+### CRITICAL — <count>
+1. **Live secret reachable from client bundle: `STRIPE_SECRET_KEY`** — `<file>:<line>`
+   - File is imported by `<client-route>:<line>`; the value ships to the browser.
    - Fix: move to a server-only module; for Next.js, drop the `NEXT_PUBLIC_` prefix; for TanStack Start, use `serverOnly()` or move to `src/fn/`.
    - auto-fixable: false
 
+### HIGH — <count>
 2. **Stripe webhook missing signature verification** — `<handler-file>:<line>`
    - Reads `req.body` then writes to DB without `stripe.webhooks.constructEvent`.
    - Fix: verify with the raw body and `STRIPE_WEBHOOK_SECRET` before processing.

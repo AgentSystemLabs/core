@@ -34,7 +34,7 @@ Run these checks. If any fail, stop and tell the user.
 
 ### Step 2 — Build the handoff packet
 
-Write the full prompt to `/tmp/codex-handoff-prompt.md` (use the `Write` tool). Argv has length limits; piping a file via stdin does not.
+Pick a **unique run id** for this handoff and use it for both files — resolve it once (e.g. run `echo "codex-$(date +%s)-$$"` and read the concrete value back), then substitute that literal into both paths: prompt `/tmp/<run-id>-prompt.md`, output `/tmp/<run-id>-output.md`. **Do not use fixed `/tmp/codex-*.md` names** — they collide across concurrent sessions, and a stale output file from a previous run gets read as this run's result. `rm -f` the output path before invoking codex as a belt-and-suspenders freshness guard. Write the full prompt to the prompt path (use the `Write` tool). Argv has length limits; piping a file via stdin does not.
 
 Required sections, in this order:
 
@@ -82,9 +82,11 @@ codex exec \
   -c model_reasoning_effort=high \
   --sandbox workspace-write \
   --ask-for-approval never \
-  -o /tmp/codex-output.md \
-  - < /tmp/codex-handoff-prompt.md
+  -o /tmp/<run-id>-output.md \
+  - < /tmp/<run-id>-prompt.md
 ```
+
+(Substitute the concrete run id resolved in Step 2 — the `<run-id>` placeholder is not a literal.)
 
 Add `--skip-git-repo-check` if preflight flagged non-repo. Add `--model <name>` only when the user named one.
 
@@ -99,13 +101,13 @@ The trailing `-` reads the prompt from stdin. The `-o` flag writes codex's final
 After codex returns:
 
 1. Re-run `git status --short` and `git diff --stat` to see what codex actually changed.
-2. Read `/tmp/codex-output.md` — codex's final message explaining what it did.
+2. Read `/tmp/<run-id>-output.md` — codex's final message explaining what it did.
 3. Cross-check: did codex's claimed changes match the actual diff? If codex says "I fixed X" but the diff doesn't touch the relevant file, flag it.
 4. Summarize for the user: what codex changed, whether it looks like the original ask is satisfied, and any concerns.
 
 **If the Bash call hits the 10-min timeout** — report it explicitly, surface stderr, and do not retry automatically. The user decides whether to re-invoke with a tighter prompt or a different model.
 
-**If `/tmp/codex-output.md` is empty or missing after a zero exit code** — treat the run as failed. Surface the captured stderr, do not assume codex did the work silently.
+**If `/tmp/<run-id>-output.md` is empty or missing after a zero exit code** — treat the run as failed. Surface the captured stderr, do not assume codex did the work silently. (Because the path is unique to this run and was `rm -f`'d beforehand, a present, non-empty file is guaranteed to be *this* run's output — no stale-file ambiguity.)
 
 **Do NOT commit.** Staging and commit decisions stay with the user.
 

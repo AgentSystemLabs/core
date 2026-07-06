@@ -153,6 +153,8 @@ Reply text:
 
 ## Phase 4 — Push and verify
 
+Before pushing, run the **canonical residue + secrets sweep** (`agentsystem-core:check-pr-readiness` Phase 5, with `include-working-tree`) on the commits you created this run — a pr-comment fix is still code, and a stray `console.log` or a pasted secret in a "quick fix" ships straight onto the reviewed PR. Hard-block on secret literals and merge-conflict markers; surface the rest to the user. Then:
+
 ```bash
 git push
 ```

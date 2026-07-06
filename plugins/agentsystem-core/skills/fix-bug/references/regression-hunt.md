@@ -76,11 +76,13 @@ Once the offending commit is identified:
 
 1. Show `git show <sha>` and point to the specific hunk that causes the symptom.
 2. Explain **why** that change breaks the feature — connect the diff to the reproduction's failure mode. "This commit removed X, which the feature relied on for Y" is the goal. "This commit looks suspicious" is not enough.
-3. List the user's options without picking one:
+3. List the user's options without picking one (present them with `AskUserQuestion`):
    - Revert the commit (`git revert <sha>`) — when the change is wholly wrong or no longer needed
    - Patch forward — when the commit's intent is correct but execution broke this feature
    - Refactor — when the breakage reveals a deeper design issue
-4. **Stop.** Do not apply a fix. Wait for the user's decision.
+4. **Stop and wait for the user's decision.** Do not apply any fix before they choose. Once they choose, hand off — the deterministic Phase 3 repro is a ready-made red/green test, so pinning the regression is nearly free:
+   - **Patch forward or refactor** → re-enter fix-bug's default workflow at **Step 7 (propose the fix) → Step 8 (verify the fix against the Phase 3 repro)**, then invoke `agentsystem-core:add-regression-test`, handing it the Phase 3 repro. This is the one path in the whole skill with a confirmed deterministic repro in hand — it must not ship without a regression test.
+   - **Revert** → after `git revert <sha>`, still invoke `agentsystem-core:add-regression-test` with the Phase 3 repro so the reverted behavior can't silently return in a future change.
 
 If a bisect was run, remind the user to `git bisect reset` if you haven't already, and to `git stash pop` if they stashed in Phase 2.
 
@@ -100,9 +102,9 @@ If a bisect was run, remind the user to `git bisect reset` if you haven't alread
   **Instead:** Refuse in Phase 2 until the user stashes or commits.
   **Why:** Bisect checks out historical commits; uncommitted changes get carried along and either contaminate the repro at every step or are silently lost on checkout.
 
-- **NEVER auto-revert or auto-patch the bad commit**
-  **Instead:** Stop at root-cause explanation in Phase 6 and present options.
-  **Why:** The commit may be load-bearing for other features the user knows about and you don't. Reverting can fix the symptom and break three other things; only the user has the full picture.
+- **NEVER auto-revert or auto-patch the bad commit before the user chooses**
+  **Instead:** Stop at root-cause explanation in Phase 6 and present the revert/patch-forward/refactor options via `AskUserQuestion`. Only after the user picks do you implement it — patch-forward/refactor re-enter fix-bug Step 7 → Step 8, and every path ends by invoking `agentsystem-core:add-regression-test` with the Phase 3 repro.
+  **Why:** The commit may be load-bearing for other features the user knows about and you don't. Reverting can fix the symptom and break three other things; only the user has the full picture. But once they choose, the confirmed repro makes pinning the regression nearly free — leaving without a test wastes the one path that has a deterministic reproduction in hand.
 
 - **NEVER treat a never-worked bug as a regression**
   **Instead:** In Phase 1, require a concrete past-working anchor. Exit regression mode if absent.

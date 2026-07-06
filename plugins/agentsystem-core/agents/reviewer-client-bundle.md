@@ -1,6 +1,6 @@
 ---
 name: reviewer-client-bundle
-description: Read-only audit of client-bundle correctness and weight regressions. Catches server-only modules imported into client routes/components (drizzle, prisma, fs, child_process, postmark, stripe-node), non-public env vars in client files, heavy dependencies (lodash, moment, draft-js, monaco, recharts) added to first-load bundles, lodash full-imports that should be tree-shakable, and unoptimized images/videos shipped without responsive variants. Detects framework conventions (TanStack Start / Next App / Next Pages / Vite SPA) so client/server boundaries are correctly identified. Returns severity-ranked findings with file:line refs; never edits files. Use when add-feature, modify-feature, code-enforce-layers, or audit runs after client-side code changes, a new dependency was added, or an asset was added to public/.
+description: Read-only audit of client-bundle correctness and weight regressions. Catches server-only modules imported into client routes/components (drizzle, prisma, fs, child_process, postmark, stripe-node), non-public env vars in client files, heavy dependencies (lodash, moment, draft-js, monaco, recharts) added to first-load bundles, lodash full-imports that should be tree-shakable, and unoptimized images/videos shipped without responsive variants. Detects framework conventions (TanStack Start / Next App / Next Pages / Vite SPA) so client/server boundaries are correctly identified. Returns severity-ranked findings with file:line refs; never edits files. Use when add-feature, modify-feature, or audit runs after client-side code changes, a new dependency was added, or an asset was added to public/.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -40,7 +40,7 @@ Set the **client boundary**:
 #### Detector A — Server-only module imported from client (**HIGH**)
 
 ```bash
-rg -n --type ts --type tsx -E "^import .* from ['\"](drizzle-orm|@prisma/client|fs|fs/promises|node:fs|child_process|crypto|postmark|nodemailer|stripe$|@aws-sdk|server-only|@/db|@/data-access|@/fn/.*server)" <client-files>
+rg -n --type ts -e "^import .* from ['\"](drizzle-orm|@prisma/client|fs|fs/promises|node:fs|child_process|crypto|postmark|nodemailer|stripe$|@aws-sdk|server-only|@/db|@/data-access|@/fn/.*server)" <client-files>
 ```
 
 Each hit: **HIGH**. Bundlers will pull these into the client, blowing up size and crashing at runtime when `fs` is unavailable. Recommend moving the call behind a server function and importing only the type.
@@ -50,7 +50,7 @@ Each hit: **HIGH**. Bundlers will pull these into the client, blowing up size an
 #### Detector B — `process.env.X` in client file with non-public prefix (**HIGH**)
 
 ```bash
-rg -n --type ts --type tsx -F 'process.env.' <client-files>
+rg -n --type ts -F 'process.env.' <client-files>
 ```
 
 Classify each var by framework:
@@ -79,8 +79,8 @@ xlsx          → dynamic-import
 For each added heavy dep, grep its import:
 
 ```bash
-rg -n --type ts --type tsx -F "from \"<dep>\"" <client-files>
-rg -n --type ts --type tsx -F "from '<dep>'" <client-files>
+rg -n --type ts -F "from \"<dep>\"" <client-files>
+rg -n --type ts -F "from '<dep>'" <client-files>
 ```
 
 If statically imported in `src/routes/` (esp. `__root` or landing): **MEDIUM** — recommend dynamic import (`React.lazy`, `next/dynamic`) at the use site. `auto-fixable: false` — wrong dynamic-import boundary breaks SSR or causes layout jank.
@@ -88,8 +88,8 @@ If statically imported in `src/routes/` (esp. `__root` or landing): **MEDIUM** �
 #### Detector D — Lodash full-import (**MEDIUM**)
 
 ```bash
-rg -n --type ts --type tsx -F 'from "lodash"' <client-files>
-rg -n --type ts --type tsx -F "from 'lodash'" <client-files>
+rg -n --type ts -F 'from "lodash"' <client-files>
+rg -n --type ts -F "from 'lodash'" <client-files>
 ```
 
 For each hit using a few named functions: `auto-fixable: true` — parent swaps to `lodash-es` named imports (or per-function imports if `lodash-es` isn't installed).
@@ -97,7 +97,7 @@ For each hit using a few named functions: `auto-fixable: true` — parent swaps 
 #### Detector E — Unoptimized image/video shipped (**MEDIUM**)
 
 ```bash
-git diff --name-only HEAD --diff-filter=AM | rg -E '\.(png|jpe?g|gif|webp|avif|mp4|webm)$' | xargs -I{} ls -la {} 2>/dev/null
+git diff --name-only HEAD --diff-filter=AM | rg -e '\.(png|jpe?g|gif|webp|avif|mp4|webm)$' | xargs -I{} ls -la {} 2>/dev/null
 ```
 
 Flag any single asset > 200KB if PNG/JPG/GIF, > 1MB if WebP/AVIF, > 5MB if video. Recommend WebP/AVIF conversion, responsive variants (`srcset`/`sizes`), lazy-loading on non-LCP images. `auto-fixable: false` — image conversion is a build-tool/asset-pipeline concern; mechanical conversion can lose alpha, color profile, or animation frames.
@@ -106,7 +106,7 @@ This is the "did the new asset blow the budget" check — flag the regression an
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Client bundle scan — <N> findings

@@ -40,8 +40,8 @@ git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/ori
 ```bash
 git rev-parse --abbrev-ref HEAD
 git log --oneline <base>..HEAD
-git diff --stat <base>..HEAD
-git diff --name-status <base>..HEAD
+git diff --stat <base>...HEAD
+git diff --name-status <base>...HEAD
 ```
 
 Capture: branch name, commit count, files changed, lines added/removed.
@@ -53,7 +53,7 @@ Each categorizer scans the diff and labels matching findings into one of these b
 #### Categorizer 1 — Public API surface change
 
 ```bash
-git diff <base>..HEAD -- 'src/fn/**' 'src/api/**' 'src/routes/api/**' 'app/api/**' 'src/trpc/**'
+git diff <base>...HEAD -- 'src/fn/**' 'src/api/**' 'src/routes/api/**' 'app/api/**' 'src/trpc/**'
 ```
 
 Look for: added/removed/renamed exports, changed function signatures, changed return types, changed input schemas. Each is a **breaking-or-compatible** change for callers — note which.
@@ -61,7 +61,7 @@ Look for: added/removed/renamed exports, changed function signatures, changed re
 #### Categorizer 2 — Persistence shape change
 
 ```bash
-git diff <base>..HEAD -- 'src/db/**' 'prisma/**' 'migrations/**' '*.sql'
+git diff <base>...HEAD -- 'src/db/**' 'prisma/**' 'migrations/**' '*.sql'
 ```
 
 Look for: new migrations, schema field add/remove/rename, type changes, constraint changes. Tag any **destructive** migration (DROP COLUMN, DROP TABLE, NOT NULL on populated table) as **HIGH risk**.
@@ -69,7 +69,7 @@ Look for: new migrations, schema field add/remove/rename, type changes, constrai
 #### Categorizer 3 — Auth / payment / permission change
 
 ```bash
-git diff <base>..HEAD | rg -E '(auth|session|jwt|cookie|password|stripe|payment|billing|permission|role|policy)'
+git diff <base>...HEAD | rg -e '(auth|session|jwt|cookie|password|stripe|payment|billing|permission|role|policy)'
 ```
 
 Manually classify hits. Auth changes are **HIGH risk** by default — they're the easiest place to introduce a regression that the typechecker won't catch.
@@ -78,9 +78,9 @@ Manually classify hits. Auth changes are **HIGH risk** by default — they're th
 
 ```bash
 # .env.example diff
-git diff <base>..HEAD -- '.env.example' '.env.sample' 'env.example.ts'
+git diff <base>...HEAD -- '.env.example' '.env.sample' 'env.example.ts'
 # process.env reads in new code
-git diff <base>..HEAD | rg '^\+.*process\.env\.'
+git diff <base>...HEAD | rg '^\+.*process\.env\.'
 ```
 
 For each new env var: check if `.env.example` was updated. If not: **MEDIUM** — the deploy will break with a missing-env error in prod.
@@ -100,9 +100,9 @@ These can't be fully covered by unit tests. Tag with the recommended QA step.
 
 ```bash
 # Did docs change?
-git diff <base>..HEAD --name-only | rg -E '\.(md|mdx)$'
+git diff <base>...HEAD --name-only | rg -e '\.(md|mdx)$'
 # Did CHANGELOG change?
-git diff <base>..HEAD -- 'CHANGELOG.md'
+git diff <base>...HEAD -- 'CHANGELOG.md'
 ```
 
 If the branch has user-facing changes (categorizer 1, 3, or 5 hits) but no doc/changelog edits: **MEDIUM** — recommend running `/sync-docs` and `/update-changelog` before publishing.
@@ -184,9 +184,9 @@ This is informational. Proceed when ready:
   **Instead:** Recommend the relevant skill (`/sync-docs`, `/update-changelog`, or the `reviewer-data-integrity` subagent) and let the user run it.
   **Why:** The user is at the publish boundary; auto-edits at this point delay the publish they explicitly asked for and produce a moving diff under their feet.
 
-- **NEVER scan beyond the branch's diff vs. base**
-  **Instead:** Use `git diff <base>..HEAD` exclusively. Do not include uncommitted work or unrelated history.
-  **Why:** The publish action targets the branch's commits; including uncommitted work double-counts changes that aren't being shipped, and including older history confuses the picture.
+- **NEVER scan beyond the branch's diff vs. base, and NEVER use two-dot `git diff <base>..HEAD`**
+  **Instead:** Use three-dot `git diff <base>...HEAD` exclusively (merge-base to HEAD). Do not include uncommitted work or unrelated history. (`git log <base>..HEAD` correctly stays two-dot — that idiom lists the branch's commits.)
+  **Why:** The publish action targets the branch's commits; two-dot `git diff` includes upstream changes the branch hasn't merged yet, polluting the briefing. Three-dot shows only what the branch added since merge-base — matching `open-pr`'s rule.
 
 - **NEVER classify a renamed-only public function as low-risk**
   **Instead:** Renames are HIGH for external consumers and MEDIUM for in-repo callers (the type checker catches in-repo). Always note "external consumers must be checked separately."

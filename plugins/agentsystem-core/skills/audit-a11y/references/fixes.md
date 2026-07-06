@@ -25,13 +25,13 @@ For each gap: detection pattern → fix-class → exact transform.
 
 **Detect:** `<img src=...>` with no `alt` attribute.
 
-**Fix-class:** auto.
+**Fix-class:** auto **only** when context strongly indicates decorative; otherwise report.
 
 **Transform:**
-- If the image is decorative (background, illustration next to text that already conveys the info): `alt=""`.
-- If meaningful: derive alt from filename / nearby caption / `src` slug. If unclear, default to `alt=""` and add a finding "needs review: confirm decorative vs. content".
+- If the image is decorative (background, illustration next to text that already conveys the info): `alt=""` (auto).
+- If meaningful: **do NOT derive alt from the filename, caption, or `src` slug** — `marketing-hero-final-v3.jpg` → `alt="marketing hero final v3"` is worse than a missing alt. Leave the markup untouched and add a finding: "needs review — confirm decorative vs. content and supply human alt text". Only auto-apply `alt=""` when the surrounding context strongly indicates the image is decorative.
 
-Same rule applies to Next.js `<Image>` and other framework wrappers.
+Same rule applies to Next.js `<Image>` and other framework wrappers. (This matches `reviewer-accessibility-regression`, which forbids filename-derived alt as an auto-fix.)
 
 ---
 

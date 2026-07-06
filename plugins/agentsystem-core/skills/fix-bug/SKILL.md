@@ -31,13 +31,13 @@ This skill accepts a `mode=` argument. Default — when no `mode=` is specified 
 | Mode | Behavior |
 |---|---|
 | `fast` | Skip the full "Response shape for first message" structure. Trace, identify, patch. For known-cause bugs where the user has already named the suspected line, or trivial single-file fixes. |
-| `balanced` (default) | Full 7-step workflow: trace → runtime contract → silent-failure grep → single diagnostic → ranked hypotheses → read evidence literally → propose fix. |
-| `production` | `balanced` + after Step 7 (propose fix), invoke `agentsystem-core:add-regression-test` to pin the bug with a test that fails on the pre-fix code and passes on the post-fix code. |
+| `balanced` (default) | Full 8-step workflow: trace → runtime contract → silent-failure grep → single diagnostic → ranked hypotheses → read evidence literally → propose fix → **verify the fix** — then pin it with `agentsystem-core:add-regression-test` unless `skip=regression-test`. |
+| `production` | `balanced` depth, and treat every matching post-fix adjunct gate as firing — don't skip a borderline reviewer. Always pins the fix with `agentsystem-core:add-regression-test`. |
 | `regression` | Load [`references/regression-hunt.md`](references/regression-hunt.md) and follow its phased workflow (confirm anchor → clean tree → repro → log/blame → bisect → root cause). Skip fix-bug's default workflow entirely — regression hunting works through git history, not runtime tracing. Stops at root-cause identification; user decides whether to revert, patch, or refactor. |
 
-**`include=` / `skip=` overrides.** Add or remove specific steps — `mode=fast include=regression-test` runs the lean trace + adds a regression test; `mode=production skip=regression-test` runs the full diagnostic without pinning.
+**`include=` / `skip=` overrides.** Add or remove specific steps — `mode=fast include=regression-test` runs the lean trace + adds a regression test; `mode=production skip=regression-test` runs the full diagnostic without pinning. **Token set:** `regression-test`, and workflow step numbers `1`–`8`.
 
-**Mode safety override.** If `mode=fast` is requested for a bug touching auth, payments, secrets, schema integrity, or external webhooks, surface the conflict via `AskUserQuestion` and confirm before honoring. Silent integration failures in those areas often have second-order causes the runtime contract surfaces — `mode=fast` skips that surfacing.
+**Mode safety override.** If `mode=fast` is requested for a bug touching any of the **risk signals** (canonical list in `ship`'s `references/risk-signals.md` — most relevant here: auth, payments, secrets, schema integrity, or external webhooks), surface the conflict via `AskUserQuestion` and confirm before honoring. Silent integration failures in those areas often have second-order causes the runtime contract surfaces — `mode=fast` skips that surfacing.
 
 **Phase-gated NEVER scope.** When `mode=fast` is in effect, *"NEVER list hypotheses without first stating the runtime contract"* is suspended for that run — fast mode explicitly opts out of the contract-first structure. The remaining NEVERs (no overconfident assertion, no parallel-hypothesis test asks, no theorizing past pasted evidence, no ignoring silent-failure patterns, no assuming the running process has latest code) stay in force in every mode.
 
@@ -130,21 +130,34 @@ Example from a real session: a Claude Code `/hooks` dialog showed `sh -c if [ -z
 
 Once root-caused, edit the file and add one sentence the standard fix narration doesn't already cover: **why the existing code looked plausible** — what made the bug ship past review. Do not refactor surrounding code unless it's part of the fix.
 
+### Step 8 — Verify the fix
+
+The skill's whole premise is that a side effect silently never happened — so a fix isn't done until you've watched the side effect *happen*. Re-run the Step 4 diagnostic (or the deterministic repro) against the patched code and confirm that the exact link that was missing in the Step 1 trace now fires:
+
+- The endpoint now receives the request / the hook now runs / the row is now written / the log line now appears.
+- If a regression repro exists (or you can cheaply build one), run it: red before the patch, green after.
+
+State the evidence in the report — "verified: the webhook now hits `handler.ts:42`, DB row written, `200` in the receiver log" — not just "fixed." If you cannot observe the side effect firing, the fix is **unconfirmed**; say so plainly and hand the user the one command that would confirm it. Do not report a silent-failure bug as fixed on the strength of "the code now looks right."
+
 ---
 
 ## Post-fix adjunct routing
 
-After the fix is implemented and verified, run only the adjuncts whose gates match the patch. Honor `skip=` from the caller.
+After Step 8 confirms the fix, run only the adjuncts whose gates match the patch. Honor `skip=` from the caller.
 
+- **`reviewer-code`** subagent (`Agent(subagent_type=reviewer-code)`) — a fresh-context correctness review of the fix diff (did it actually address the root cause? did it introduce a new edge case or plan-drift?). Run for any non-trivial fix; skip only for a one-line or obviously-correct patch. Apply auto-fixable items; surface the rest.
 - **`reviewer-contracts`** subagent (`Agent(subagent_type=reviewer-contracts)`) — when the patch changes a client/server, route/schema, IPC, DTO, generated-client, server-function, OpenAPI, tRPC, or API boundary.
+- **`reviewer-authz`** subagent (`Agent(subagent_type=reviewer-authz)`) — when the patch touches a server entry point's ownership or access check (the fix added or changed a `requireUser`/ownership lookup, or the reported bug was "one user could see or act on another user's data"). Missing-auth/IDOR is the highest-severity class a fix can accidentally introduce or leave in place; `reviewer-security-regression` explicitly defers authorization, so it must be dispatched separately.
 - **`reviewer-concurrency`** subagent (`Agent(subagent_type=reviewer-concurrency)`) — when the patch touches mutations, jobs, webhooks, retries, idempotency, transactions, async UI writes, polling, or stale async responses.
+- **`reviewer-data-integrity`** subagent (`Agent(subagent_type=reviewer-data-integrity)`) — when the fix changes persistence logic (writes, deletes, backfills, uniqueness assumptions, or read-modify-write on stored rows), **even without a migration**. A persistence-logic fix that passes locally on an empty table can still corrupt existing production rows.
+- **`reviewer-boundary-validation`** subagent (`Agent(subagent_type=reviewer-boundary-validation)`) — when the fix adds or changes a server entry point that reads external input (`req.body`/params, webhook payload, queue message, IPC arg) and the bug involved a malformed/unexpected value. Reports boundaries with no schema parse; hand HIGH gaps to `agentsystem-core:harden-types` to fix.
 - **`reviewer-observability-coverage`** subagent (`Agent(subagent_type=reviewer-observability-coverage)`) — after critical-path async/error/integration fixes. If missing evidence is still in scope, invoke `agentsystem-core:add-observability`.
-- **`reviewer-security-regression`** subagent (`Agent(subagent_type=reviewer-security-regression)`) — when the patch touches auth, payments, secrets/env, file upload, webhook signing, external APIs, unsafe redirects, or user-rendered HTML.
+- **`reviewer-security-regression`** subagent (`Agent(subagent_type=reviewer-security-regression)`) — when the patch touches auth, payments, secrets/env, file upload, webhook signing, external APIs, unsafe redirects, or user-rendered HTML. (Broad app-security; authorization/IDOR is out of scope here — that's `reviewer-authz` above.)
 - **`reviewer-error-boundaries`** subagent (`Agent(subagent_type=reviewer-error-boundaries)`) — when the bug or fix affects a user-facing failure path, route loader, form submit, background failure surfaced in UI, or blank-screen risk.
 - `agentsystem-core:add-migration` — when the bug fix requires a corrective migration (schema needed an additional column the bug exposed, NOT NULL added without backfill, missing index causing the symptom, enum value never written, broken default, orphaned rows from a prior migration). Use this skill instead of hand-writing the migration so the fix gets the multi-phase deploy plan and data-integrity audit. Then dispatch the **`reviewer-data-integrity`** subagent against the migration + code diff.
 - `agentsystem-core:realign` — when the root cause is not a local bug but a domain-model mismatch: enum/state/vocabulary drift, persisted status value mismatch, lifecycle-state rename, or a state machine whose code and business meaning diverged.
 
-In `production`, also invoke `agentsystem-core:add-regression-test` unless explicitly skipped. If the patch touched UI files, run `agentsystem-core:polish-ui` after the checks above unless the UI delta is copy-only.
+In `balanced` and `production`, invoke `agentsystem-core:add-regression-test` to pin the fix unless explicitly skipped (`fast` pins only with `include=regression-test`) — its own description says to run it automatically after any code fix, and Step 8's repro is usually a ready-made red/green test. If the patch touched UI files, run `agentsystem-core:polish-ui` after the checks above unless the UI delta is copy-only.
 
 ---
 

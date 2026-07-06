@@ -1,7 +1,12 @@
 ---
 name: sync-docs
-description: Updates existing project documentation in-place after code changes — bug fixes, new features, tech stack swaps, UX/API changes, env var additions, dependency updates. Edits Swagger/OpenAPI specs, README, CHANGELOG, ADRs, .env.example, setup guides, and inline doc comments to match current code. NEVER creates new doc files; only modifies existing ones and reports gaps. Use when a commit/PR just landed, when the user says "update docs", "sync documentation", "docs are stale", "update the swagger", "update the readme", or after changing API endpoints, request/response shapes, CLI flags, env vars, or dependencies.
+description: Updates existing project documentation in-place after code changes — bug fixes, new features, tech stack swaps, UX/API changes, env var additions, dependency updates. Edits Swagger/OpenAPI specs, README, ADRs, .env.example, setup guides, and inline doc comments to match current code; defers all CHANGELOG writes to update-changelog. NEVER creates new doc files; only modifies existing ones and reports gaps. Use when a commit/PR just landed, when the user says "update docs", "sync documentation", "docs are stale", "update the swagger", "update the readme", or after changing API endpoints, request/response shapes, CLI flags, env vars, or dependencies.
 ---
+
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
 
 # sync-docs
 
@@ -75,7 +80,7 @@ Edit with the smallest diff that makes the doc accurate. Format-specific care:
     - Drop a response status code without confirming the code no longer returns it
   ```
 - **README install/usage**: update commands and code blocks verbatim from the new code; do not paraphrase flag names.
-- **CHANGELOG**: append under the unreleased section in the project's existing style (Keep a Changelog, conventional, or freeform — match what's already there).
+- **CHANGELOG**: do **not** edit it here. Defer all CHANGELOG writes to `agentsystem-core:update-changelog` — recommend or invoke it so the changelog is written once, by the skill that owns its format and inherits the file's existing structure. sync-docs owns every *other* doc surface; the changelog has a single owner.
 - **`.env.example`**: add new required vars with a comment; remove vars no longer read by code; preserve ordering and existing comments.
 - **ADRs**: do not rewrite a decided ADR. If a tech-stack swap supersedes one, append a "Superseded by …" note or add a new ADR *only if a docs/adr directory already exists and the user asks*.
 - **Inline doc comments** (JSDoc, docstrings, rustdoc): update parameter names, types, and return shape; remove `@deprecated` lines for things that are now gone.
@@ -117,9 +122,9 @@ Edit with the smallest diff that makes the doc accurate. Format-specific care:
   **Instead:** One Edit per stale fact. Keep prose, ordering, and voice intact.
   **Why:** Rewrites destroy human-authored nuance (caveats, links, historical notes) that the diff didn't require touching.
 
-- **NEVER update a CHANGELOG for an internal refactor that has no user-visible effect**
-  **Instead:** Skip it. CHANGELOGs are for consumers of the project, not for commit history.
-  **Why:** Noisy changelogs train readers to ignore them, which hides the entries that actually matter.
+- **NEVER write `CHANGELOG.md` yourself**
+  **Instead:** Defer to `agentsystem-core:update-changelog` — recommend or invoke it. That skill owns the changelog format, inherits the file's existing structure, and applies the "is this changelog-worthy?" filter (skipping internal refactors with no user-visible effect).
+  **Why:** Two skills writing the same file in two formats mangle it — a Keep-a-Changelog file gets flattened, or a flat log gets scaffolded. One owner keeps the format coherent.
 
 ---
 

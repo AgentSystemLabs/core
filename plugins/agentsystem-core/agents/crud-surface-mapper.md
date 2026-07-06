@@ -1,8 +1,11 @@
 ---
 name: crud-surface-mapper
 description: Read-only subagent that takes an artifact/entity name (Task, Project, Workspace, User, etc.) and returns every place a user creates, edits, configures, imports, or duplicates that artifact in the app — create dialog, edit dialog, settings page, bulk import, CSV upload, API client, admin override, duplicate-from-template, etc. Returns a structured surface list with file:line refs the parent uses to ensure a new field/behavior ships to every CRUD touchpoint, not just the most visible one. Used by add-feature Phase 1 (CRUD/input surfaces) and modify-feature when adding a field or behavior to an artifact. Never edits files.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
+model: haiku
 ---
+
+> **No shell.** You have Read, Grep, and Glob — no Bash. The `rg` / `fd` snippets below are search *patterns*; run them with the Grep and Glob tools.
 
 # crud-surface-mapper
 
@@ -39,9 +42,9 @@ A create surface is anywhere a NEW row of this artifact is materialized. Look fo
 
 ```bash
 # Server functions / mutations whose name implies creation
-rg -n --type ts -E '(create|new|add|insert|register|signup)<Artifact>' <repo>
+rg -n --type ts -e '(create|new|add|insert|register|signup)<Artifact>' <repo>
 # UI dialogs/pages with names implying creation
-rg -n --type tsx -E 'New<Artifact>|Create<Artifact>|<Artifact>Form' <repo>
+rg -n --type ts -e 'New<Artifact>|Create<Artifact>|<Artifact>Form' <repo>
 # DB inserts on the artifact's table
 rg -n --type ts -F 'db.insert(<artifactTable>' <repo>
 ```
@@ -51,8 +54,8 @@ For each hit: cite `file:line`, classify the surface (modal / page / API endpoin
 ### Step 3 — Find every edit / update surface
 
 ```bash
-rg -n --type ts -E '(update|edit|patch|set)<Artifact>' <repo>
-rg -n --type tsx -E 'Edit<Artifact>|<Artifact>Settings' <repo>
+rg -n --type ts -e '(update|edit|patch|set)<Artifact>' <repo>
+rg -n --type ts -e 'Edit<Artifact>|<Artifact>Settings' <repo>
 rg -n --type ts -F '.update(' <repo> | rg -F '<artifactTable>'
 ```
 
@@ -62,12 +65,12 @@ For each hit: cite, classify (inline edit / dedicated edit modal / settings page
 
 ```bash
 # Bulk import / CSV upload
-rg -n --type tsx -E 'import.*<Artifact>|upload.*<Artifact>' <repo>
-rg -n --type ts -F 'parseCSV\|parseJSON' <repo>
+rg -n --type ts -e 'import.*<Artifact>|upload.*<Artifact>' <repo>
+rg -n --type ts -e 'parseCSV|parseJSON' <repo>
 # Duplicate / clone
-rg -n --type ts -E 'duplicate<Artifact>|clone<Artifact>|copy<Artifact>' <repo>
+rg -n --type ts -e 'duplicate<Artifact>|clone<Artifact>|copy<Artifact>' <repo>
 # From template
-rg -n --type ts -E 'fromTemplate|<Artifact>Template' <repo>
+rg -n --type ts -e 'fromTemplate|<Artifact>Template' <repo>
 # Migrations / seed data
 fd -e ts 'seed' <repo> | xargs rg -l '<artifactTable>' 2>/dev/null
 fd -e ts -e sql 'migration' <repo> | xargs rg -l '<artifactTable>' 2>/dev/null

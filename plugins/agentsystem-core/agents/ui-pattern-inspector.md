@@ -1,8 +1,11 @@
 ---
 name: ui-pattern-inspector
 description: Read-only subagent that takes a recurring UI surface name (Modal, Dialog, Drawer, Sheet, Popover, Form, Card, Toast, Confirm, Command Palette) and returns a sibling-instance inventory with concrete conventions — submit/cancel hotkeys (Cmd+Enter, Esc), Kbd hint placement, autofocus target, loading/disabled states, footer chrome, error display, and escape/click-outside behavior. Returns 2–3 representative siblings with file:line refs and a "convention summary" the parent uses to match by default in new instances. Used by add-feature Phase 2 (UI surface parity) and modify-feature when adding a new instance of a recurring UI family. Never edits files.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
+model: haiku
 ---
+
+> **No shell.** You have Read, Grep, and Glob — no Bash. The `rg` / `fd` snippets below are search *patterns*; run them with the Grep and Glob tools.
 
 # ui-pattern-inspector
 
@@ -27,11 +30,11 @@ If the surface name is ambiguous (e.g., "form" could mean any submit form or spe
 
 ```bash
 # Prefer project primitives (Radix/shadcn wrappers) AND project-named components
-rg -n --type tsx -F '<Dialog' <repo> | head -30
-rg -n --type tsx -F '<Modal' <repo> | head -30
-rg -n --type tsx -F '<Drawer' <repo> | head -30
-rg -n --type tsx -F '<Sheet' <repo> | head -30
-rg -n --type tsx -F '<form ' <repo> | head -30
+rg -n --type ts -F '<Dialog' <repo> | head -30
+rg -n --type ts -F '<Modal' <repo> | head -30
+rg -n --type ts -F '<Drawer' <repo> | head -30
+rg -n --type ts -F '<Sheet' <repo> | head -30
+rg -n --type ts -F '<form ' <repo> | head -30
 ```
 
 Pick **2–3 representative siblings** that:

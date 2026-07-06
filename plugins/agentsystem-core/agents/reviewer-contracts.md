@@ -56,9 +56,9 @@ If a producer's return type has a renamed or removed field, grep all callers:
 
 ```bash
 rg -n --type ts -F '<fnName>(' <scope>
-rg -n --type tsx -F '<fnName>(' <scope>
+rg -n --type ts -F '<fnName>(' <scope>
 rg -n --type ts -F '.<oldField>' <calling-files>
-rg -n --type tsx -F '<oldField>:' <calling-files>
+rg -n --type ts -F '<oldField>:' <calling-files>
 ```
 
 For each caller still reading the old field: drift. Mark `auto-fixable: true` only when the rename is mechanical (same semantics, only name changed). Mark `auto-fixable: false` when the field was removed entirely or its semantics changed — caller needs domain decisions.
@@ -66,11 +66,11 @@ For each caller still reading the old field: drift. Mark `auto-fixable: true` on
 #### Detector B — Route param / search-param shape change (**HIGH**)
 
 ```bash
-rg -n --type tsx -F 'to="<route-path>"' <scope>
-rg -n --type tsx -F "to='<route-path>'" <scope>
+rg -n --type ts -F 'to="<route-path>"' <scope>
+rg -n --type ts -F "to='<route-path>'" <scope>
 rg -n --type ts  -F 'navigate({' <scope>
-rg -n --type tsx -F 'useParams' <route-file-dir>
-rg -n --type tsx -F 'useSearch' <route-file-dir>
+rg -n --type ts -F 'useParams' <route-file-dir>
+rg -n --type ts -F 'useSearch' <route-file-dir>
 ```
 
 For each link/navigate using the old param name or shape: report. `auto-fixable: true` only on simple renames where the value type is unchanged.
@@ -101,7 +101,7 @@ If the producer source file's mtime is newer than the generated file's, the clie
 
 ### Step 4 — Return structured report
 
-Reply with ONLY a findings report in this format. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Contract scan — <N> findings

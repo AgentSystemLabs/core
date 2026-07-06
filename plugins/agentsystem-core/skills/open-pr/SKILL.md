@@ -12,15 +12,11 @@ Phased workflow. Do not skip the confirmation gate — a published PR notifies r
 
 ## Modes
 
-Accepts `mode=fast|balanced|production`. Default — when no `mode=` is specified — is `production`. **A PR is a public artifact.** Reviewers will assume the diff is shippable; the mode controls how thoroughly we verify that before publishing.
+Accepts `mode=fast|balanced|production`. Default — when no `mode=` is specified — is `production`. **A PR is a public artifact.** Reviewers will assume the diff is shippable.
 
-| Mode | Pre-publish gate (Phase 2.5) |
-|---|---|
-| `fast` | Residue sweep only (console.log / `.only` / debugger / merge markers / TODO additions). Blocks on merge markers; warns on the rest. |
-| `balanced` | `fast` + typecheck + lint on the cumulative diff. Blocks on type/lint errors. |
-| `production` (default) | Full `agentsystem-core:check-pr-readiness` against the branch vs. base. Blocks on any red gate (typecheck, lint, formatter, tests, residue, large/binary additions, lockfile drift). |
+**Pre-publish gate — the full gauntlet in EVERY mode (Phase 2.5).** Unlike the delivery skills, `mode=` here does **not** weaken the gate. A PR is at least as public as a push, and `commit-and-push` already runs the full `check-pr-readiness` gauntlet even in `fast` — so a PR must never be gated more weakly than a push. Therefore open-pr runs the **full `agentsystem-core:check-pr-readiness`** against the branch vs. base in **all three modes**, blocking on any red gate (typecheck, lint, formatter, tests, the canonical residue + secrets sweep, large/binary additions, lockfile drift). `mode=` only tunes non-gate behavior — PR-body verbosity and WIP/draft detection.
 
-**Override:** explicit `mode=…` in the user's prompt wins.
+**Override:** explicit `mode=…` in the user's prompt wins, but only for body/draft behavior — it cannot downgrade the gate.
 
 ## Phase 1 — Gather
 

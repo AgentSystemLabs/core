@@ -48,7 +48,7 @@ For mutations that create-and-charge (`create order`, `create payment intent`, `
 
 ```bash
 rg -n --type ts -F 'createServerFn' <scope>
-rg -n --type ts -E '(create|insert|book|charge|send)\w*\(' <scope>
+rg -n --type ts -e '(create|insert|book|charge|send)\w*\(' <scope>
 ```
 
 Check for at least one safeguard:
@@ -79,8 +79,8 @@ If a handler performs ≥2 writes that form a logical unit ("deduct balance + cr
 #### Detector E — Stale async response overwrites newer state (**MEDIUM**)
 
 ```bash
-rg -n --type tsx -B1 -A10 -F 'useEffect' <scope> | rg -F 'fetch\(\|setX\('
-rg -n --type tsx -F 'AbortController' <scope>
+rg -n --type ts -B1 -A10 -F 'useEffect' <scope> | rg -e 'fetch\(|setX\('
+rg -n --type ts -F 'AbortController' <scope>
 ```
 
 For each `useEffect` that fetches and writes to local state:
@@ -92,7 +92,7 @@ For each `useEffect` that fetches and writes to local state:
 #### Detector F — Background job not idempotent (**HIGH**)
 
 ```bash
-rg -n --type ts -E '(processJob|handleJob|workerHandler|consume|process)\(' <scope>
+rg -n --type ts -e '(processJob|handleJob|workerHandler|consume|process)\(' <scope>
 fd -e ts 'jobs?|workers?|queue' <scope>
 ```
 
@@ -100,7 +100,7 @@ For each job: check (a) reads progress from durable state before doing work (so 
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report in this format. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Concurrency scan — <N> findings

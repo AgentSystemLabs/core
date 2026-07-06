@@ -9,22 +9,34 @@ export function convertAgentToOpencodeMd(agentMdFile, outMdFile, fallbackName) {
 
   let description = `AgentSystem subagent: ${fallbackName}`;
   let body = content;
+  let toolsRaw = '';
 
   if (parsed) {
     description = truncateDescription(
       readScalar(parsed.frontmatterLines, 'description') ||
         `AgentSystem subagent: ${fallbackName}`
     );
+    toolsRaw = readScalar(parsed.frontmatterLines, 'tools') || '';
     body = parsed.body.replace(/^\n+/, '');
   }
+
+  // Derive OpenCode permissions from the agent's declared `tools:` rather than
+  // hardcoding — a read-only reviewer gets edit:deny/bash:allow, but an editing
+  // agent (e.g. pr-comment-resolver) must get edit:allow or it can't do its job.
+  const tools = toolsRaw
+    .split(',')
+    .map(t => t.trim().toLowerCase())
+    .filter(Boolean);
+  const canEdit = tools.includes('edit') || tools.includes('write');
+  const canBash = tools.includes('bash');
 
   const frontmatter = [
     '---',
     `description: ${JSON.stringify(description)}`,
     'mode: subagent',
     'permission:',
-    '  edit: deny',
-    '  bash: allow',
+    `  edit: ${canEdit ? 'allow' : 'deny'}`,
+    `  bash: ${canBash ? 'allow' : 'deny'}`,
     '---',
     '',
   ].join('\n');

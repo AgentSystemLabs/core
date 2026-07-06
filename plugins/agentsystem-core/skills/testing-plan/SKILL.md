@@ -5,6 +5,8 @@ description: Generate a markdown QA test plan a human tester can execute against
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
 
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
 
 # Testing Plan
 

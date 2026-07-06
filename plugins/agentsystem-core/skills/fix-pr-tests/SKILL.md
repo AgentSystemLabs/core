@@ -75,7 +75,8 @@ After fixing one failure, **scan sibling tests** for the same root cause before 
 
 1. Re-verify: failing test → containing file → full suite only if the fix touched shared code (utilities, types, schemas, config).
 2. Commit with a message that names the failure and the classification: e.g. `fix: handle null user in formatName (regression caught by formatName.test.ts)` or `test: update formatName expected output for new locale rule`.
-3. Push to the PR branch. Then `gh pr checks <PR#> --watch` (or poll) until CI re-runs. If still red, return to Phase 1 with the new logs — do not assume a second failure is the same as the first.
+3. Before pushing, run the **canonical residue + secrets sweep** (`agentsystem-core:check-pr-readiness` Phase 5, with `include-working-tree`) on the commit(s) you created — a test fix can still carry a `console.log`, a leftover `.only`, or a leaked secret. Hard-block on secret literals and merge markers; surface the rest.
+4. Push to the PR branch. Then `gh pr checks <PR#> --watch` (or poll) until CI re-runs. If still red, return to Phase 1 with the new logs — do not assume a second failure is the same as the first.
 
 ---
 

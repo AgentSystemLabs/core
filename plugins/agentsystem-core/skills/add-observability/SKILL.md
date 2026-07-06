@@ -6,6 +6,11 @@ metadata:
 description: Internal handoff target invoked by add-feature and modify-feature when wiring integration boundaries (HTTP/webhook dispatch, IPC, Claude Code hooks, queues, file writes, env-var injection, MCP tool calls, spawned processes) so that when a side effect later goes silent, fix-bug reads literal evidence instead of guessing. Instruments boundaries with leveled, structured logs and typed error reporting. Detects the project's existing logger and conforms; if none exists, proposes a minimal leveled logger or a zero-dep `console`-based fallback. Replaces silent-failure patterns (`|| true`, empty `catch {}`, `>/dev/null 2>&1`) with logged catches that preserve behavior. Trigger phrases for routing: "instrument this", "add logging to X", "this integration has no logs", "make this debuggable", "proactive logging", "structured logs for this feature", "wire up observability", "I want a trail for this". Skip for pure unit-test code, internal utility functions with no I/O, generated code, third-party vendor files, and reactive debugging of a specific failure (use fix-bug instead).
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
+
 # Code Add Observability
 
 Add evidence to integration boundaries *before* something goes silent. The output of this skill is read by `/fix-bug` later — its first message reports endpoints, env vars, and **log/observation locations**. If the locations don't exist, `/fix-bug` is reduced to hypothesis-testing.

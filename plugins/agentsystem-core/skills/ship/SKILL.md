@@ -29,11 +29,18 @@ Read the user's prompt and map to one of six core skills:
 
 **EVOLVE vs POLISH boundary.** EVOLVE is one specific change the user named (whether it's a single-element cosmetic tweak or a behavior extension); POLISH is "apply the checklist" without a specified change. If the user names what to change, it's EVOLVE. If they ask for a pass, it's POLISH. For purely cosmetic single-element changes ("make this button green", "fix the alignment"), route to EVOLVE with `mode=fast`.
 
+**Pre-classification probe (cheap, one search).** Verb-mapping alone misleads: "add a settings page" in a repo that *already has one* is EVOLVE, not CREATE. Before locking a CREATE vs EVOLVE decision, run one quick Glob/Grep for the named artifact — the route path, component name, table, or endpoint. If it already exists → almost always EVOLVE (`modify-feature`); if it genuinely doesn't → CREATE (`add-feature`). One probe is far cheaper than a wrong full-pipeline run the user only notices at Step 5. Skip the probe only when the verb is unambiguous ("delete X", "why didn't X fire").
+
 **Ambiguous prompts** — when two intents are equally plausible (e.g., "rebuild auth" could be EVOLVE or REMOVE+CREATE), ask exactly one disambiguating `AskUserQuestion`. Don't guess.
 
 **Multi-intent prompts** — if the user lists clearly separable goals ("add X and remove Y"), execute them sequentially as separate /ship routings, not one combined run. State the order before starting.
 
-**No-match prompts** — if the user's request doesn't fit any of the six intents above (e.g., explain code, document a flow, compare approaches, ask a question about the codebase, brainstorm features, or scaffold a new app from zero), /ship is the wrong tool. Stop and tell the user the request doesn't map to an engineering workflow this skill orchestrates, and — if the match is obvious — point at the matching skill directly (e.g., "review this PR" → `/review`, "sync the docs" → `/sync-docs`, "explain this module" → no skill needed, just answer in the conversation).
+**Refactor / test-authoring prompts** — two common asks sit just outside the six intents but *do* have a home:
+- "refactor this module", "clean this up", "DRY this", "find code smells" → route to `simplify` (pass `scope=<the named path>` so it isn't diff-limited). If the "refactor" actually changes behavior, it's EVOLVE → `modify-feature` instead.
+- "write tests for X", "add test coverage", "cover this with tests" → route to `write-tests`.
+Announce these like any other routing (Detected / Mode / Pipeline), then delegate via the `Skill` tool.
+
+**No-match prompts** — if the user's request doesn't fit any intent above (e.g., explain code, document a flow, compare approaches, ask a question about the codebase, brainstorm features, or scaffold a new app from zero), /ship is the wrong tool. Stop and tell the user the request doesn't map to an engineering workflow this skill orchestrates, and — if the match is obvious — point at the matching skill directly (e.g., "review this PR" → `/review`, "sync the docs" → `/sync-docs`, "explain this module" → no skill needed, just answer in the conversation).
 
 ---
 
@@ -41,13 +48,7 @@ Read the user's prompt and map to one of six core skills:
 
 Three modes — `fast`, `balanced`, `production`. Pick one before announcing.
 
-**Risk signals (any one → `production`)**:
-- Touches auth, permissions, payments, billing, secrets, or external webhooks
-- Schema migration or persisted-data rewrite
-- Destructive deletion or deprecation of an external/public contract
-- Background jobs, queues, cron, retries, email/SMS/push, imports/exports, file writes, spawned processes, IPC, or external APIs
-- Caching, query invalidation, feature flags, analytics/business reporting, or concurrency-sensitive mutations
-- Multi-subsystem in the same change (frontend + backend + DB)
+**Risk signals (any one → `production`)** — the canonical list lives in [`references/risk-signals.md`](references/risk-signals.md); the mode-safety overrides in `add-feature` / `modify-feature` / `remove-feature` / `fix-bug` all cite that same file so the signals can't drift apart. In one line: auth / permissions / payments / secrets / external webhooks; schema migrations or persisted-data rewrites; destructive deletion of an external/public contract; background jobs / queues / cron / email / SMS / imports / exports / file writes / IPC / external APIs; caching / query-invalidation / feature flags / analytics / concurrency-sensitive mutations; or a multi-subsystem change (frontend + backend + DB together).
 
 **Tiny-scope signals (all four → `fast`)**:
 - Single file
@@ -76,6 +77,8 @@ Pipeline:
 ```
 
 Pipeline numbering must match what the routed core skill will actually run at the chosen mode (e.g., `add-feature mode=production` does Clarify → Explore → Design → Plan approval → Implement → Verify → Gated reviews → Tests → Post-steps). Do not invent phases the routed skill won't execute — those become a credibility hole at Step 5.
+
+**Persist the plan (run-state artifact).** A production run spans many phases and subagent fan-outs; on context compaction the announced pipeline is the first thing lost — and Step 5's summary would then be reconstructed from a faded memory. Write the plan block above to a scratch file (`.agentsystem/ship-run.md`, or your session scratch dir if the repo shouldn't be touched) as a checklist, and **check each phase off in that file as the routed skill completes it**. Step 5 reads the completed-phase record from this artifact rather than from memory, so a mid-run compaction can't silently drop a phase (or invent one that didn't run) from the report.
 
 **Confirmation gating depends on mode:**
 
@@ -121,7 +124,7 @@ Inline execution loses subagent context isolation but preserves routing decision
 
 ## Step 5 — Report and hand off to git
 
-After the routed skill returns, output a visible-pipeline summary:
+After the routed skill returns, output a visible-pipeline summary. **Read the completed-phase record from the Step 3 run-state artifact (`.agentsystem/ship-run.md`)** rather than reconstructing it from memory — the checklist you kept is the authoritative record of what actually ran, especially after a long production run where the early phases have scrolled out of context.
 
 ```
 ✔ <phase 1>  — <one-line outcome>
@@ -183,7 +186,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 - **UI scaffolding (when feature is user-facing):** `agentsystem-core:add-empty-error-states` (empty + error UI), `agentsystem-core:polish-ui` (post-step UX checklist), `agentsystem-core:propagate-ui-pattern` (when 3+ siblings of a recurring surface exist).
 - **Backend scaffolding (when persisted data or schema changes):** `agentsystem-core:add-migration`, `agentsystem-core:add-observability` (integration-first lane), `agentsystem-core:audit-authz` (when the feature adds or changes server entry points with ownership/permission checks).
 - **Tests (Phase 8):** `agentsystem-core:write-tests` (unit/integration), `agentsystem-core:add-e2e-test` (browser flows when Playwright is wired).
-- **Audits (Phase 7 gates):** reviewer-* subagents (contracts, concurrency, data-integrity, security-regression, error-boundaries, loading-states, accessibility-regression, client-bundle, observability-coverage, perf), audit-perf, audit-responsive, code-enforce-route-data, code-enforce-layers.
+- **Audits (Phase 7 gates):** reviewer-* subagents (contracts, concurrency, data-integrity, security-regression, error-boundaries, loading-states, accessibility-regression, client-bundle, observability-coverage, perf, authz), audit-perf, audit-responsive.
 - **Cleanup (post-step):** simplify, polish-ui.
 
 ### EVOLVE → `modify-feature` may invoke
@@ -200,8 +203,10 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### FIX → `fix-bug` may invoke
 
-- **Regression pinning (after fix lands):** `agentsystem-core:add-regression-test`.
-- **Polish if UI changed:** `agentsystem-core:polish-ui`.
+- **Reviewers (gated by the patch surface):** reviewer-contracts, reviewer-authz, reviewer-concurrency, reviewer-data-integrity, reviewer-observability-coverage, reviewer-security-regression, reviewer-error-boundaries.
+- **Backend / domain adjuncts:** `agentsystem-core:add-migration` (corrective migration), `agentsystem-core:add-observability` (missing evidence), `agentsystem-core:realign` (domain-model mismatch).
+- **Regression pinning (balanced + production):** `agentsystem-core:add-regression-test`.
+- **Cleanup:** `agentsystem-core:simplify` (always), `agentsystem-core:polish-ui` (if UI changed, non-copy).
 
 ### REMOVE → `remove-feature` may invoke
 
@@ -210,6 +215,6 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### AUDIT → `audit` may invoke
 
-- The full reviewer-* subagent family across the repo, plus audit-perf, audit-a11y, audit-responsive, audit-seo-meta, audit-analytics, simplify, harden-types — see `audit/SKILL.md` for the full menu.
+- The reviewer-* subagent fleet across the repo (contracts, data-integrity, error-boundaries, loading-states, observability-coverage, perf, authz, security-regression, concurrency, client-bundle) plus `simplify`, `harden-types`, and `audit-a11y` (whole-app a11y). The per-route `audit-perf` / `audit-responsive` / `audit-seo-meta` / `audit-analytics` skills are **manual entry points**, not part of audit's default battery. See `audit/SKILL.md` for exactly which auditors fire at each mode.
 
 **Course-author note:** because these are gate-driven, a given /ship run will invoke only a subset. The Step 5 pipeline summary names exactly which ones did fire — that's the authoritative record, not this appendix.

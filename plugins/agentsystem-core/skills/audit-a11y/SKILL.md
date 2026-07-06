@@ -3,9 +3,14 @@ name: audit-a11y
 description: Static accessibility audit of a route/component — checks keyboard reachability, screen-reader semantics (ARIA labels, label/input association, roles), and WCAG AA color contrast. Auto-fixes the mechanical gaps inline (icon-button labels, image alt, label htmlFor, div-as-button → button, missing role/aria-*); reports structural ones (focus traps, tab-order rewrites, contrast token swaps that need design input). Pure file reads + grep, no axe-core or browser. Trigger phrases — "a11y audit", "accessibility audit", "screen reader check", "keyboard accessibility", "WCAG", "aria check", "/audit-a11y", "is this accessible", "audit this page for a11y", "tab order", "contrast check". Skip for — pure backend/server changes, copy-only edits, CSS tokens-only changes with no UI affected, and audits requiring real browser/axe-core (recommend Playwright + axe instead).
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+
 # audit-a11y
 
 Static a11y audit for one route/component. Four phases — do them in order.
+
+> **Sibling:** `reviewer-accessibility-regression` is the changed-files-only counterpart — a read-only post-step that runs on a diff without producing whole-app noise. Use *this* skill (`audit-a11y`) for whole-route/whole-app passes and for applying the mechanical fixes; use the reviewer when a feature/modify run just needs a scoped a11y gate on its own diff. The two share the same alt-text policy (never derive alt from a filename — see `references/fixes.md`).
 
 ## Phase 1 — Scope
 

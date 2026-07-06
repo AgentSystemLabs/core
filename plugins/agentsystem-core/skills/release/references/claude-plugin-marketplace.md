@@ -12,8 +12,9 @@ Every release touches at least:
 
 - **Root marketplace** — `.claude-plugin/marketplace.json`, field `metadata.version`. Always bumps. It's the umbrella; any plugin change is a marketplace release.
 - **Per-plugin** — `plugins/*/.claude-plugin/plugin.json`, field `version`. Bumps **only when that plugin's code changed since `LAST_TAG`**.
+- **npm package (hybrid repos only)** — `package.json`, field `version`, plus its lockfile. Present only when the marketplace is *also* published to npm (an installer CLI). Sync it to the new **marketplace** (`metadata.version`) value in the same release commit — keep it equal to the marketplace version, not to any single plugin's version.
 
-Per-plugin baselines are independent and stay independent. When more than one plugin lives under `plugins/`, one may sit at `0.30.0` while another sits at `0.6.0` — that's correct, not drift. Do not normalize them.
+Per-plugin baselines are independent and stay independent. When more than one plugin lives under `plugins/`, one may sit at `0.30.0` while another sits at `0.6.0` — that's correct, not drift. Do not normalize them. (The `package.json` sync above is the one exception, and only on hybrid npm-published marketplaces.)
 
 ## Diff-driven bump rule
 
@@ -58,6 +59,8 @@ Stage all bumped manifests in one commit:
 
 ```bash
 git add .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json
+# hybrid repos only: also stage the npm manifest + lockfile synced to the marketplace version
+git add package.json package-lock.json 2>/dev/null || true
 git commit -m "chore(release): vNEXT_VERSION"
 ```
 

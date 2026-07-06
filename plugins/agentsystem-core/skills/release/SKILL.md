@@ -3,6 +3,9 @@ name: release
 description: Cut a versioned release for a project — bump the manifest version (semver major/minor/patch, default minor), commit, create an annotated git tag, and generate release notes from commits since the last tag. Runs the full `check-pr-readiness` gauntlet against the release range plus the `check-release-risk` briefing before tagging, so what gets tagged is shippable. Accepts `mode=fast|balanced|production` (default: `production`). Use when the user says "cut a release", "release this", "tag a release", "bump version", "publish a new version", "/release", "/release patch", "/release major", or asks to ship a new version. Supports package.json, pyproject.toml, Cargo.toml, plain VERSION files, and Claude Code plugin marketplaces (diff-driven per-plugin bumps via .claude-plugin/marketplace.json + plugins/*/.claude-plugin/plugin.json). Skip for unreleased prototypes with no prior tag history if the user only wants a changelog (use a changelog tool instead) and for workspace-style monorepos (Nx, Turborepo, Cargo workspaces) where each package publishes independently.
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+
 # Release
 
 Phased workflow. Do not skip phases. Each phase has an explicit exit condition; if it fails, stop and surface to the user — do not paper over.
@@ -19,7 +22,7 @@ A tag points at code that other people (and CI, package registries, ops dashboar
 
 | Mode | Quality gate (Phase 1.5) |
 |---|---|
-| `fast` | Residue sweep only (console.log / `.only` / debugger / merge markers / TODO additions in the release range). |
+| `fast` | The canonical residue + secrets sweep from `agentsystem-core:check-pr-readiness` (its Phase 5), scoped to the release range. Hard-blocks on secret literals and merge-conflict markers. |
 | `balanced` | `fast` + typecheck + lint on the release range. Blocks on type/lint errors. |
 | `production` (default) | Full `agentsystem-core:check-pr-readiness` against the release range (last tag → HEAD, or all history when no prior tag). Blocks on any red gate. |
 
@@ -45,12 +48,12 @@ Then:
 1. **Dirty tree** (`git status --porcelain` non-empty) → STOP. Show the user the dirty files and ask whether to stash, commit separately, or abort. Do not auto-stash.
 2. **Branch check** — if not on `main` / `master` / `release/*`, ask the user to confirm before continuing. Releasing from a feature branch is almost always a mistake.
 3. **No prior tag** — note it; release notes will use "all commits" as the range. Do not invent a baseline tag.
-4. **Detect manifest** (first match wins, in this order):
+4. **Detect manifest** (first match wins, in this order — `marketplace.json` is checked **first** because a repo can be *both* a plugin marketplace and an npm package, and the marketplace layout is the one the single-manifest flow gets wrong):
+   - `.claude-plugin/marketplace.json` → Claude Code plugin marketplace. **MANDATORY — READ [`references/claude-plugin-marketplace.md`](references/claude-plugin-marketplace.md)** before Phase 2; this layout has multiple version fields and a diff-driven bump rule that the default single-manifest flow gets wrong. **Hybrid repos:** if `package.json` also exists (the marketplace is *also* published to npm — e.g. an installer CLI), the marketplace flow owns the plugin/marketplace versions AND you must sync `package.json` (and its lockfile) to the new marketplace version in the same release commit, so `npm publish` and Claude Code's plugin updater never disagree.
    - `package.json` → Node
    - `pyproject.toml` → Python (look for `[project] version` or `[tool.poetry] version`)
    - `Cargo.toml` → Rust (`[package] version`)
    - `VERSION` (plain text, single semver line) → generic
-   - `.claude-plugin/marketplace.json` → Claude Code plugin marketplace. **MANDATORY — READ [`references/claude-plugin-marketplace.md`](references/claude-plugin-marketplace.md)** before Phase 2; this layout has multiple version fields and a diff-driven bump rule that the default single-manifest flow gets wrong.
    - None found → STOP and ask the user where the version lives.
 
 State the detected manifest, current version, and last tag back to the user before proceeding.
@@ -65,8 +68,8 @@ Compute the release range: `<last-tag>..HEAD` if a prior tag exists, otherwise t
 
 Run the mode-appropriate gate from the **Modes** table:
 - `mode=production` → invoke `agentsystem-core:check-pr-readiness` against the release range. Pipe its report through verbatim.
-- `mode=balanced` → typecheck + lint on the files changed in the release range + residue sweep on the release range diff.
-- `mode=fast` → residue sweep on the release range diff only.
+- `mode=balanced` → typecheck + lint on the files changed in the release range + the canonical residue + secrets sweep (`agentsystem-core:check-pr-readiness` Phase 5) on the release range diff.
+- `mode=fast` → the canonical residue + secrets sweep (`agentsystem-core:check-pr-readiness` Phase 5) on the release range diff only.
 
 If any gate fails, **stop**. Ask via `AskUserQuestion`:
 - **Fix and retry** → exit; user fixes and re-invokes `/release`.

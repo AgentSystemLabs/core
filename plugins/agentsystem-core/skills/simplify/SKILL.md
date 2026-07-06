@@ -3,10 +3,12 @@ name: simplify
 user-invocable: false
 metadata:
   audience: handoff
-description: Internal handoff target invoked as a post-step by add-feature, modify-feature, fix-bug, fix-pr-tests, address-pr-comments, remove-feature, realign, and reorganize-files to clean up freshly-changed code. Reviews the git diff for DRY violations, duplicate code, oversized files/functions/components, magic numbers, poor naming, tight coupling, missed reuse of existing utilities, and inefficient patterns; refactors in place without breaking behavior. Writes a safety-net test first when the refactor risks behavior change. Default scope is changed files; expands to siblings only when a flagged smell points there. Trigger phrases for routing: "simplify", "clean this up", "DRY this", "find code smells", "any duplication", "split this up". Skip for type-only edits, pure formatting, generated files, and changes the user has explicitly scoped to "no refactor".
+description: Internal handoff target invoked as a post-step by add-feature, modify-feature, fix-bug, fix-pr-tests, address-pr-comments, remove-feature, realign, and reorganize-files to clean up freshly-changed code — and by `audit` (Phase 4) with a caller-passed `scope=` to run the same review over a whole-repo scope. Reviews the git diff for DRY violations, duplicate code, oversized files/functions/components, magic numbers, poor naming, tight coupling, missed reuse of existing utilities, and inefficient patterns; refactors in place without breaking behavior. Writes a safety-net test first when the refactor risks behavior change. Default scope is changed files (or the caller's `scope=`); expands to siblings only when a flagged smell points there. Trigger phrases for routing: "simplify", "clean this up", "DRY this", "find code smells", "any duplication", "split this up". Skip for type-only edits, pure formatting, generated files, and changes the user has explicitly scoped to "no refactor".
 ---
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
 
 
 # Code Simplify
@@ -17,10 +19,10 @@ Refactor freshly-changed code into a smaller, drier, better-named, less-coupled 
 
 ## Phase 1 — Scope
 
-1. Run `git diff --name-only` and `git diff --merge-base <base>` to identify changed files. If no diff, ask the user which files to scope.
-2. Read each changed file in full and the diff hunks. Note imports — utilities the new code might duplicate often live next to or one directory up from the changed file.
-3. State the scope back to the user as a list before reviewing: "Reviewing N files: [list]. Will reach into siblings only if a flagged smell points there."
-4. **Scope guard.** If the diff names >50 files or spans an unrelated branch base (e.g., the user just rebased onto a different upstream), STOP and ask the user to narrow scope before reviewing. /simplify is a focused pass; aimed at a whole src/ it produces noise instead of fixes.
+1. Determine scope. If a **caller passed `scope=<path>`** (e.g., `audit` running repo-wide), use that path as the scope and read the files under it. Otherwise run `git diff --name-only` and `git diff --merge-base <base>` to identify changed files; if there's no diff, ask the user which files to scope.
+2. Read each in-scope file in full (plus the diff hunks when working from a diff). Note imports — utilities the new code might duplicate often live next to or one directory up from the changed file.
+3. State the scope back to the caller/user as a list before reviewing: "Reviewing N files: [list]. Will reach into siblings only if a flagged smell points there."
+4. **Scope guard.** With **no** caller-passed `scope=`: if the diff names >50 files or spans an unrelated branch base (e.g., the user just rebased onto a different upstream), STOP and ask the user to narrow scope before reviewing — /simplify is a focused pass; aimed at a whole `src/` it produces noise instead of fixes. When a **caller passed `scope=`** (audit's repo-wide pass), that caller already owns the scope decision — do **not** stop; proceed over the given scope, processing it in file-group batches if it's very large.
 
 ---
 
@@ -41,15 +43,13 @@ If `write-tests` cannot wire a test (no harness, third-party-only path, UI witho
 
 **MANDATORY — READ [`references/code-smells.md`](references/code-smells.md)** before launching the agents. The headline list below is the high-leverage subset; the reference file holds the full catalog each agent should scan against.
 
-Launch three agents concurrently in a single message. Pass each the full diff, the list of changed file paths, and a pointer to `references/code-smells.md`.
+Launch the reuse lookup (Agent 1, via `utility-finder`) and the two review agents (Agents 2–3) concurrently in a single message. Pass Agents 2 and 3 the full diff, the list of changed file paths, and a pointer to `references/code-smells.md`; pass `utility-finder` each new helper's signature.
 
-### Agent 1 — Code Reuse
+### Agent 1 — Code Reuse (dispatch `utility-finder`)
 
-For each change:
-- Search for existing utilities and helpers that could replace newly written code. Common locations: utility directories (`lib/`, `utils/`, `helpers/`), shared modules, files adjacent to the changed ones, and files imported by neighboring code.
-- Flag any new function that duplicates existing functionality. Suggest the existing function to use instead, with its file path and signature.
-- Flag inline logic that could use an existing utility — hand-rolled string manipulation, manual path handling, custom environment checks, ad-hoc type guards, date math, deep-equality checks.
-- Flag duplicate code blocks within the diff itself (copy-paste of 3+ lines with minor variation).
+Don't re-describe utility-finder's job — dispatch the real subagent. For each genuinely new function/helper the diff introduces, dispatch `utility-finder` (`Agent(subagent_type=utility-finder)`) with the function's signature/behavior (or a noun phrase like "format duration"); it returns ranked existing equivalents with file:line refs and a reuse / extend / write-new verdict. Batch the independent lookups into parallel dispatches in one message.
+
+Separately — without a subagent — flag duplicate code blocks **within the diff itself** (copy-paste of 3+ lines with minor variation) and inline logic that obviously duplicates a standard utility. That's local to the diff and doesn't need a repo-wide search.
 
 ### Agent 2 — Code Quality
 
@@ -99,9 +99,9 @@ Run the safety-net test from Phase 2 after each structural fix. If it goes red, 
   **Instead:** invoke `agentsystem-core:write-tests` for the touched path, confirm green, then refactor.
   **Why:** "looks equivalent" refactors regularly break behavior in branches the diff doesn't cover; the test is the only proof.
 
-- **NEVER expand scope beyond the diff silently**
-  **Instead:** surface the sibling smell as a question with file paths and ask before touching.
-  **Why:** users invoke /simplify expecting a focused pass on what they just wrote — a 40-file rewrite shatters trust and conflicts with in-flight work.
+- **NEVER expand scope beyond the diff (or the caller's `scope=`) silently**
+  **Instead:** surface the sibling smell as a question with file paths and ask before touching. **Exception:** a caller-passed `scope=` (from `audit`) is an explicit, wider scope grant — operate within it without re-asking, but still never reach outside *it* silently.
+  **Why:** users invoke /simplify expecting a focused pass on what they just wrote — a 40-file rewrite shatters trust and conflicts with in-flight work. `audit` is the one caller that has already negotiated a wider scope with the user, so honoring its `scope=` isn't a silent expansion.
 
 - **NEVER replace a magic number with a constant whose name restates the value**
   **Instead:** name it after the business meaning (`MAX_RETRY_ATTEMPTS`, not `THREE`).

@@ -5,6 +5,8 @@ description: After a bug fix lands (or is staged), generate a regression test th
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
 
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
 
 # Add Regression Test
 
@@ -43,12 +45,13 @@ Apply the harness-detection rules from `write-tests` (or use that skill's refere
 
 This is the load-bearing step. **MANDATORY — READ [`references/reproduction-modes.md`](references/reproduction-modes.md)** before choosing a mode.
 
-Pick one mode:
+Pick one mode (full command sequences are in the reference):
 
-- **A. Fix is unstaged in working tree** → write the test, `git stash` only the fix files, run the test (must fail), `git stash pop`, run the test (must pass).
-- **B. Fix is staged but not committed** → write the test, `git stash --keep-index` to set aside the test, then `git stash pop`-trick won't work cleanly; instead use mode C.
-- **C. Fix is committed locally** → write the test on top, then `git revert --no-commit <fix-sha>` in a temporary worktree (or via `git stash` of the fix files), confirm the test fails, restore.
-- **D. Fix is squashed into a larger commit and can't be cleanly isolated** → revert just the offending hunks via `git checkout <pre-fix-sha> -- <file>` in a worktree, confirm test fails, restore.
+- **A. Fix is unstaged in working tree** → write the test, `git stash push -- <fix-files>` (stashes only the fix, not the new test), run the test (must fail), `git stash pop`, run the test (must pass).
+- **B. Fix is staged but not committed** → unstage the fix (`git restore --staged <fix-files>`) and use mode A; or commit it and use mode C. (`git stash --keep-index` only stashes unstaged changes, so it cannot isolate a staged fix.)
+- **C. Fix is committed locally** → write the test on top, create a temporary worktree at `<fix-sha>~1`, copy the test in, confirm it fails, then remove the worktree.
+- **D. Fix is squashed into a larger commit and can't be cleanly isolated** → in a worktree, restore the file's pre-fix state via `git checkout <pre-fix-sha> -- <fix-files>`, drop the test in, confirm it fails, restore.
+- **E. Test depends on new symbols the fix introduced** → the pre-fix code can't import them, so test against the public surface that existed before and after (preferred), or stub the new symbol in the pre-fix run.
 
 In every mode, the gate is the same: **the test must fail without the fix code present.** A test that passes both before and after is broken — go back and tighten the assertion.
 

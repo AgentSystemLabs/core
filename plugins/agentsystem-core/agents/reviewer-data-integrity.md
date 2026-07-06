@@ -103,7 +103,7 @@ For each destructive op: check whether a `down`/rollback migration exists and wh
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report in this format. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Data integrity scan — <N> findings

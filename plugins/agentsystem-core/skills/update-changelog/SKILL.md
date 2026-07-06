@@ -3,6 +3,11 @@ name: update-changelog
 description: Append a new entry to the project's CHANGELOG.md after finishing a feature, fixing a bug, tuning performance, applying a security patch, or before a commit. One chronological markdown file (newest first), bullet points prefixed with a category emoji, concise user-perspective wording. Trigger phrases — "update changelog", "/changelog", "log this change", "add to changelog", "record this in CHANGELOG", "release notes", "version history", "what changed". Also invoke proactively right before `git commit` when staged changes are user-visible, and after completing a feature or bug-fix task. Skip for: formatting-only diffs, test-only edits, doc typo fixes, generated-file churn, dependency lockfile bumps, internal scaffolding the user will never see.
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
+
 # Update CHANGELOG.md
 
 Append a new entry summarizing the current logical change to `CHANGELOG.md` at the repo root. One file, chronological, newest-on-top, emoji-prefixed bullets.
@@ -47,6 +52,8 @@ When a diff produces multiple bullets, write the one with greater user impact fi
 ## Step 2 — Pick the emoji
 
 Use exactly one emoji from this canonical set as the first character of each bullet. Do not invent new ones.
+
+**Existing-file style wins.** This canonical emoji set (and the flat-list scaffold in Step 4) applies when *creating* a new changelog. When appending to a changelog that already exists, match *its* conventions instead — if it's a Keep a Changelog file with `### Added/Changed/Fixed` groups and no emoji, follow that; if it uses a different emoji set or none, match what's there. See Step 4.
 
 | Emoji | Category | Use for |
 |-------|----------|---------|
@@ -100,7 +107,13 @@ All notable changes to this project, newest first.
 
 Then append the new bullet under the title block.
 
-**If the file exists** — insert the new bullet at the top of the bullet list (immediately after the title/intro block, above all existing bullets). Preserve the existing file's exact spacing and trailing newline.
+**If the file exists** — first detect its structure and match it; do **not** impose the flat scaffold above on a file that already has its own shape:
+
+- **Keep a Changelog style** (`## [Unreleased]` / `## [x.y.z]` version headings with `### Added / Changed / Fixed / Removed` groups) → add the entry under `## [Unreleased]` in the matching group, creating the `### <group>` sub-heading only if it's absent. Use that file's wording conventions — most Keep-a-Changelog files use plain prose, no emoji; match that rather than forcing this skill's emoji set.
+- **Flat newest-first list** (title/intro block, then emoji bullets) → insert at the top of the bullet list, immediately after the intro block, using the canonical emoji from Step 2.
+- **Any other established shape** → follow it. Match the existing entries' emoji usage (or absence), casing, and punctuation.
+
+Preserve the existing file's exact spacing and trailing newline. Only apply this skill's default scaffold and canonical emoji vocabulary when *creating* a brand-new changelog.
 
 **Dedup check** — before writing, scan the top ~10 bullets. If a near-identical bullet (same emoji + same core verb/noun) already exists, do not add a duplicate. Either:
 - Skip and tell the user it's already logged, or
@@ -123,6 +136,10 @@ Print the bullet you added (or the dedup decision) in one line. Do not stage or 
 - **NEVER invent new emojis or use multiple emojis per bullet**
   **Instead:** Pick exactly one from the canonical table; if it doesn't fit, the change probably isn't changelog-worthy.
   **Why:** Inconsistent emoji vocabulary makes the log unscannable and trains future entries to drift further.
+
+- **NEVER impose this skill's scaffold or emoji set on an existing CHANGELOG that has its own structure**
+  **Instead:** Detect the file's shape (Keep a Changelog, flat emoji list, or custom) and match it — sections, headings, and emoji-usage-or-absence. Apply the default scaffold and canonical emoji only when creating a new file.
+  **Why:** A Keep-a-Changelog file flattened into an emoji list (or a flat log scaffolded with `## [Unreleased]` sections) corrupts a format that other tooling and readers depend on. `sync-docs` defers all CHANGELOG writes here precisely so there is one owner and one coherent format.
 
 - **NEVER log refactors, tests, formatting, or lockfile churn unless the user explicitly asks**
   **Instead:** Skip silently or ask once.

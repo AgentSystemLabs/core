@@ -24,7 +24,7 @@ This skill accepts a `mode=` argument that controls depth of execution. Default 
 | `balanced` | 1, 2, 3, 5, 6, 7a, 7b, 7e (gated), 7f (gated), 7g (gated), 8 (conditional), post-steps | 4 (Plan-gate), 7c (Security), 7d (Perf), 7h (Data Integrity) unless explicitly included |
 | `fast` | 5, 6 | 1, 2, 3, 4, 7a-7h, 8, post-steps |
 
-**`include=` / `skip=` overrides.** Add or remove specific phases on top of the mode default — `mode=fast include=8` runs implement + verify + tests; `mode=production skip=7c` skips the security review even when the gate would have triggered. `include=` wins over the mode default; `skip=` wins over both.
+**`include=` / `skip=` overrides.** Add or remove specific phases on top of the mode default — `mode=fast include=8` runs implement + verify + tests; `mode=production skip=7c` skips the security review even when the gate would have triggered. `include=` wins over the mode default; `skip=` wins over both. **Token set:** phase numbers `1`–`8`, review-gate ids `7a`–`7n`, and the lane tokens `logic-first` and `tests`.
 
 **Conditional tests in balanced mode.** Phase 8 runs in `balanced` whenever the diff changes backend logic, data transformations, permissions, contracts, persisted data, non-trivial branching, async behavior, or bug-prone business rules. Skip Phase 8 in `balanced` only for trivial UI wiring, one-line wrappers, pure config, copy/styling-only changes, or projects where the user explicitly says "no tests."
 
@@ -32,7 +32,7 @@ This skill accepts a `mode=` argument that controls depth of execution. Default 
 
 **Integration-first lane.** If the feature touches HTTP/webhook dispatch, queues, jobs, cron, IPC, MCP tool calls, file writes, env-var injection, spawned processes, external APIs, email/SMS/push, imports/exports, or cache invalidation, plan the runtime contract and observation point in Phase 3. Dispatch the **`runtime-contract-tracer`** subagent (via `Agent(subagent_type=runtime-contract-tracer)`) with the integration name to get the trigger → dispatch → receive → observe trace with file:line refs and silent-failure sites flagged — this becomes the input to Phase 3's planning. After Phase 6, invoke `agentsystem-core:add-observability` unless the project already has equivalent structured evidence and you can name where it lives.
 
-**Mode safety override.** If `mode=fast` is requested for work that touches auth, permissions, payments, secrets, schema migrations, destructive deletes, background jobs, queues, cron, external APIs, email/SMS/push, imports/exports, file writes, spawned processes, IPC, caching/invalidation, feature flags, analytics/business reporting, concurrency-sensitive mutations, or external webhooks, pause and surface the conflict via `AskUserQuestion`: *"Detected high-risk signals. You requested fast mode — that skips clarify, plan, reviews, and tests. Confirm fast anyway, or upgrade to production?"* The `/ship` orchestrator enforces this upstream, but direct manual callers may not — don't silently honor a dangerous override.
+**Mode safety override.** If `mode=fast` is requested for work that hits any of the **risk signals** — the canonical list lives in `ship`'s `references/risk-signals.md` (auth/permissions/payments/secrets/webhooks, schema migrations or persisted-data rewrites, destructive deletes of external contracts, background jobs/queues/cron/email/SMS/imports/exports/file-writes/IPC/external APIs, caching/invalidation/flags/analytics/concurrency-sensitive mutations, or multi-subsystem changes) — pause and surface the conflict via `AskUserQuestion`: *"Detected high-risk signals. You requested fast mode — that skips clarify, plan, reviews, and tests. Confirm fast anyway, or upgrade to production?"* The `/ship` orchestrator enforces this upstream, but direct manual callers may not — don't silently honor a dangerous override.
 
 **Phase-gated NEVER scope.** Several rules in the NEVER section below are phase-gated. When the active mode skips a phase, the corresponding NEVER is explicitly suspended for that run:
 
@@ -169,7 +169,7 @@ Run reviews **on the diff you just produced**. Each review is gated by what the 
 Subagent fan-out is encouraged here: dispatch the applicable reviews in parallel as separate agents, then consolidate findings.
 
 ### 7a. Code Review — ALWAYS
-Read [`references/code-review-checklist.md`](references/code-review-checklist.md) and apply it to the diff.
+Dispatch the **`reviewer-code`** subagent (via `Agent(subagent_type=reviewer-code)`) with the diff and the approved Phase 4 plan. It carries [`references/code-review-checklist.md`](references/code-review-checklist.md) and reviews in a **fresh context** — a self-review by the same agent that wrote the code inherits the author's blind spots, which is the whole reason 7a exists. Apply the `auto-fixable: true` items; surface the rest. (Host-portability fallback: if the `Agent` tool is unavailable, read `references/code-review-checklist.md` and apply it to the diff inline.)
 
 ### 7b. Duplication Scan — ALWAYS
 Run `agentsystem-core:simplify` against the diff when it is non-trivial to surface parallel patterns, repeated literal-equality filters, and scattered enum literals the type system can't catch. Also, for each new function/component/utility, search the repo for existing equivalents and refactor to reuse if found. Skip for single-line fixes, comment/format-only changes, test-fixture edits, and non-TS files.
@@ -214,6 +214,12 @@ Dispatch the **`reviewer-accessibility-regression`** subagent (via `Agent(subage
 ### 7l. Client Bundle — GATED
 Dispatch the **`reviewer-client-bundle`** subagent (via `Agent(subagent_type=reviewer-client-bundle)`) when client-side code changes in routes/components/hooks, when a new dependency is imported from UI code, when server-only modules might cross into the browser bundle, or when large editor/chart/image/media dependencies are added. Apply the lodash → lodash-es swap if flagged auto-fixable; surface the rest.
 
+### 7m. Boundary Validation — GATED
+Dispatch the **`reviewer-boundary-validation`** subagent (via `Agent(subagent_type=reviewer-boundary-validation)`) when the diff adds or changes a server entry point that reads external input (`req.body`/params/query, webhook payloads, queue messages, IPC args, server-fn/tRPC input). It reports boundaries with no schema parse — the read-only sibling of `harden-types` (authz checks *who*, contracts check *drift*, this checks whether shape validation exists at all). Surface HIGH findings; to fix, hand the boundary to `agentsystem-core:harden-types` to insert the schema. Skip when the diff adds no new server-input surface.
+
+### 7n. Dependencies — GATED
+Dispatch the **`reviewer-dependencies`** subagent (via `Agent(subagent_type=reviewer-dependencies)`) when the diff changes `package.json` or a lockfile, or adds a dependency. It gates advisories, install scripts, maintenance/license flags, and sweeps the diff for hardcoded-secret literals **before** the pipeline ends (secrets are otherwise only caught at `/commit`, after /ship stops). Surface findings; dependency swaps and key rotation are the user's call. Skip when no dependency changed.
+
 ### Resolving review conflicts
 If two review subagents contradict each other (e.g., one flags a query as N+1, another says it's fine), pick one and document why. Do not average — one is right and one is wrong. Read both findings against the actual code and decide.
 
@@ -227,6 +233,8 @@ Every finding must be either fixed or explicitly acknowledged with the user befo
 Add tests where they earn their keep:
 - **Unit / Integration** — invoke `agentsystem-core:write-tests` to author or expand the suite for the changed module. It detects the existing test harness (Vitest/Jest/pytest/go test/etc.), inherits naming and mocking conventions, and wires a smoke test before generating the rest. If no harness exists, it proposes the smallest industry-standard runner for the stack and waits for user approval before installing.
 - **E2E / UI** — when the feature is a user-facing flow (sign-in, form submit, multi-step wizard, payment, navigation) AND the project either already has Playwright or the user approves installing it, invoke `agentsystem-core:add-e2e-test`. Skip this branch when the project has no browser harness and the user does not want one — stop at integration.
+
+After `write-tests` generates the suite, dispatch the **`reviewer-test-quality`** subagent (via `Agent(subagent_type=reviewer-test-quality)`) against the new test files + the production diff. Phase 8's output is the least-audited artifact in the pipeline — a green suite that asserts nothing, mocks the unit under test, or never executes the changed lines silently invalidates every upstream gate's "verified" claim. Surface its findings and strengthen the flagged tests before declaring Phase 8 done.
 
 Categories to cover within `write-tests`:
 - **Unit** — pure functions, non-trivial branching logic, parsers, validators

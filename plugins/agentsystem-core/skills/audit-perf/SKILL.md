@@ -8,105 +8,73 @@ description: Static performance audit of a route, page, server function, or modu
 
 # Audit Perf
 
-Static analysis only. Every finding has an evidence line (file:line) and a concrete fix. No "consider optimizing" — either a measurable issue is visible in the code or it isn't reported.
+This skill is the **interactive wrapper** around the `reviewer-perf` subagent. The subagent owns the
+pattern catalog and does the scan — one catalog, one owner — and this skill scopes the target,
+dispatches the subagent, and walks the user through the findings. Static analysis only: every finding
+has a `file:line` and a concrete fix; no "consider optimizing."
 
 ---
 
 ## Phase 1 — Scope
 
-Default scope = a route, page, or module the user names. If the user says "the slow page", confirm which route. If they say "the codebase", narrow to one entry point — perf audits across the whole repo produce noise, not signal.
+Default scope = a route, page, or module the user names. If the user says "the slow page", confirm
+which route via `AskUserQuestion`. If they say "the codebase", narrow to one entry point — perf
+audits across the whole repo produce noise, not signal.
 
-Read the entry point and follow its imports two layers deep (the route file, any colocated loader/server-fn, and the data-access functions it calls). Do not chase the entire dependency graph — most perf bugs live in the data path and the render path.
+Identify the entry point and the two-layers-deep import set (route file, colocated loader/server-fn,
+data-access functions it calls). Do not chase the entire dependency graph.
 
-**Exit:** the file set to scan is fixed (typically 3–10 files).
-
----
-
-## Phase 2 — Run the Pattern Sweep
-
-**MANDATORY — READ [`references/perf-patterns.md`](references/perf-patterns.md)** for the full pattern catalog.
-
-For each file in scope, scan for the pattern catalog. Each match becomes a finding with:
-
-- **File:line**
-- **Pattern name** (one of the catalog entries)
-- **Likely impact** (high / medium / low — see catalog for the rubric)
-- **Suggested fix** (concrete, code-level)
-
-Skip patterns that don't apply to the stack — e.g., don't flag missing React.memo in a non-React project.
-
-**Exit:** all files scanned; raw findings list compiled.
+**Exit:** the file set to scan is fixed (typically 3–10 files), stated back to the user.
 
 ---
 
-## Phase 3 — Triage
+## Phase 2 — Dispatch the perf scan
 
-Drop findings that are false positives:
+Dispatch the **`reviewer-perf`** subagent (`Agent(subagent_type=reviewer-perf)`) with the Phase 1
+scope. It runs the full pattern sweep — N+1 queries, missing indexes, `SELECT *`, sequential awaits,
+server-only bundle leakage, synchronous I/O in handlers, unbounded fetches, loader waterfalls,
+unmemoized hot-path computations, unvirtualized lists — triages false positives, and returns a
+severity-ranked markdown report (`## Perf scan — <N> findings`, every finding `auto-fixable: false`).
+**The pattern catalog lives in the agent — this skill does not re-list it**, so the two can't drift.
 
-- A `for await` over a small fixed list (≤ a handful of items) is not an N+1.
-- `SELECT *` on a table with one or two narrow columns is fine.
-- An unmemoized computation inside a component that renders once per page load is fine.
+**Host-portability fallback.** If the `Agent` tool isn't available (some non-Claude-Code hosts), read
+`plugins/agentsystem-core/agents/reviewer-perf.md` and run its Step 1–4 workflow inline over the
+Phase 1 scope, producing the same report. State the degradation to the user.
 
-For each remaining finding, restate the impact in concrete terms: "this fires N additional DB queries per request, where N = number of items in `posts`" beats "potential N+1 issue."
-
-**Exit:** triaged list with concrete impact statements.
+**Exit:** the reviewer's severity-ranked findings are in hand.
 
 ---
 
-## Phase 4 — Report
+## Phase 3 — Present and decide
 
-Group findings by impact tier. Within each tier, order by file path so the user can read top-to-bottom.
+Surface the reviewer's findings to the user grouped by severity, top-to-bottom. Perf fixes are
+**tradeoffs** (an index speeds reads but slows writes; memoization adds complexity), so this skill
+does not auto-apply. If the user picks findings to apply, apply them **one at a time** with a
+typecheck between each, and show the diff. Never bulk-apply.
 
-```
-Performance Audit — <scope>
-───────────────────────────
-
-HIGH IMPACT
-  src/fn/getPosts.ts:42
-    Pattern: N+1 query in author lookup
-    Impact:  one DB roundtrip per post (current page = 50 posts → 51 queries)
-    Fix:     batch with `inArray(authors.id, posts.map(p => p.authorId))` and zip in JS,
-             or expose a dataloader
-
-  src/routes/dashboard.tsx:18
-    Pattern: missing index on filter column
-    Impact:  `where(eq(events.userId, ...))` over a table with no index on userId →
-             full table scan as the table grows
-    Fix:     add index in drizzle schema: index('events_user_id_idx').on(table.userId)
-
-MEDIUM IMPACT
-  ...
-
-LOW IMPACT
-  ...
-```
-
-End with a one-line summary: `<n> findings (high: x, med: y, low: z). No fixes applied.`
+End with the reviewer's one-line summary (counts by severity) and note that no fixes were applied
+unless the user explicitly asked.
 
 ---
 
 ## NEVER
 
-- **NEVER apply fixes from this skill.**
-  **Instead:** report findings only. The user runs the appropriate skill (or their own judgment) to apply.
-  **Why:** perf fixes are tradeoffs (an index speeds reads but slows writes; memoization adds complexity). The user owns the decision. An audit that auto-fixes erodes the audit/apply boundary and makes the diff harder to review.
+- **NEVER apply fixes without the user asking, and never bulk-apply.**
+  **Instead:** report findings; apply only what the user picks, one at a time with a typecheck between.
+  **Why:** perf fixes are tradeoffs (an index speeds reads but slows writes; memoization adds complexity). The user owns the decision, and one-at-a-time keeps the diff reviewable.
+
+- **NEVER re-list the pattern catalog in this skill.**
+  **Instead:** the catalog is owned by `reviewer-perf`; dispatch it. If you think a pattern is missing, add it to the agent, not here.
+  **Why:** two copies of the catalog drift — the exact rot this consolidation removed.
 
 - **NEVER report a finding without a file:line.**
-  **Instead:** every finding cites the exact location. If you cannot point at a line, the finding is a guess.
-  **Why:** unsourced findings train the user to skim or ignore the report. A line number lets them verify in seconds.
-
-- **NEVER report "potential" issues.**
-  **Instead:** if you can't explain the concrete impact (rows scanned, requests fired, KB shipped to client), drop the finding.
-  **Why:** "potential" is the audit version of "be careful" — it costs the user attention and pays back nothing.
-
-- **NEVER recommend speculative micro-optimizations.**
-  **Instead:** focus on patterns where the impact scales with input size (N+1, missing index, full-table scan, unbounded fetch). Skip "use a tighter loop" or "prefer Set over Array".
-  **Why:** micro-optimizations rarely matter and almost always cost readability. The audit's value is in finding the order-of-magnitude wins.
+  **Instead:** every finding cites the exact location (the reviewer already enforces this).
+  **Why:** unsourced findings train the user to skim. A line number lets them verify in seconds.
 
 - **NEVER conflate static-analysis findings with runtime profiling.**
   **Instead:** if the user wants to know what's actually slow in production, recommend a real profiler (browser devtools, server-side APM, EXPLAIN ANALYZE) and stop.
-  **Why:** static patterns predict but don't measure. A static finding can be a non-issue at runtime; a real bottleneck can have no static signature. Pretending static = runtime misleads the user.
+  **Why:** static patterns predict but don't measure. Pretending static = runtime misleads the user.
 
 - **NEVER scan the whole repo by default.**
-  **Instead:** narrow to one route / page / module. Refuse a "scan the whole codebase" request and ask which entry point matters.
-  **Why:** a full-repo perf scan produces hundreds of low-impact findings that drown the high-impact ones. The signal lives in the slow path.
+  **Instead:** narrow to one route / page / module; ask which entry point matters.
+  **Why:** a full-repo perf scan produces hundreds of low-impact findings that drown the high-impact ones.

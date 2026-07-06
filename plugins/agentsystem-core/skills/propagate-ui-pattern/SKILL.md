@@ -3,6 +3,11 @@ name: propagate-ui-pattern
 description: When the user requests a UX-pattern change (keyboard, focus, dismiss, or feedback-display behavior) on a single instance of a recurring component family (Modal, Dialog, Drawer, Form, Card, Toast), grep for sibling instances, present them per-instance, and — when 3+ approved siblings would share the same inline implementation — propose extracting a shared hook/wrapper before applying. Also propagates the visual affordance (kbd hint, aria-keyshortcuts, footer hotkey line) alongside the behavior. Trigger phrases — "add a hotkey to this modal", "Cmd+Enter should submit", "make X close on escape", "autofocus this input", "make sure all my modals do X", "every form should Y", "consolidate this pattern", "dedupe this across components", "show the hotkey hint", "add ⌘↵ badge", "make the shortcut discoverable". Skip for: one-off visual tweaks scoped to a single component, new features (use add-feature), bug fixes (use fix-bug), changes the user has explicitly scoped to one component ("only in this one").
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
+
 # UX Consistency
 
 Single-instance UX changes silently create drift. The user adds Cmd+Enter to one modal; six other modals stay inconsistent until someone notices months later. This skill catches the propagation question *before* the diff lands.
@@ -110,6 +115,16 @@ Before writing the diff, check the original site (or the most-polished sibling) 
 Replicate whichever exist. If none exist on any site, surface that as a one-line flag at the end ("none of these modals show the hotkey to the user — worth adding?") rather than fixing it unilaterally.
 
 Apply changes (extracted seam + migrated sites, or inline edits) in one batch. For each ASK that the user approved, briefly confirm the variant fits (e.g. some modals may need a different keybinding because Enter already does something).
+
+## Step 6 — Verify the batch
+
+This skill is a multi-file fan-out editor — after the batch apply, prove it didn't break anything:
+
+1. **Typecheck** the project (detect the `typecheck` / `check-types` / `tsc` script; else `npx tsc --noEmit`). A handler propagated into a sibling that doesn't have the referenced prop/ref is a build break.
+2. **Run the touched components' tests** — the test files colocated with the migrated sites, or the suite filtered to them. A propagated `Cmd+Enter` that now submits a form which wasn't meant to auto-submit surfaces as a failing interaction test, not a typecheck error.
+3. **Re-grep** for the original inline pattern (the keydown literal / hotkey string) to confirm every approved site was actually migrated, and — when a seam was extracted — that no inline duplicate survived.
+
+Report exactly what you verified. If the typecheck or a test goes red, revert the offending site's change and surface it — never leave a half-propagated batch where some siblings have the new behavior and the build is broken.
 
 ## NEVER
 

@@ -22,9 +22,9 @@ This skill accepts a `mode=` argument. Default — when no `mode=` is specified 
 | `balanced` (default) | Full 6-phase workflow. |
 | `production` | `balanced` + after Phase 6, broader smoke verification: dev-server check on 3+ adjacent features, explicit user sign-off before declaring done. |
 
-**`include=` / `skip=` overrides.** Add or remove specific phases — `mode=fast include=p5` re-enables the multi-pass re-sweep; `mode=production skip=adjacent-smoke` skips the broader smoke check.
+**`include=` / `skip=` overrides.** Add or remove specific phases — `mode=fast include=p5` re-enables the multi-pass re-sweep; `mode=production skip=adjacent-smoke` skips the broader smoke check. **Token set:** phase ids `p1`–`p6` and `adjacent-smoke`.
 
-**Mode safety override (universal — overrides `mode=fast`).** If Phase 2 surfaces references suggesting an external contract — public package exports, webhook payload shapes, public URLs, or DB columns read by services outside this codebase — `mode=fast` is refused. Surface the external consumers and force `balanced` or `production`. The "NEVER delete code that is part of a public/external contract" rule below is universal across modes.
+**Mode safety override (universal — overrides `mode=fast`).** If Phase 2 surfaces references suggesting an external contract — public package exports, webhook payload shapes, public URLs, or DB columns read by services outside this codebase (the external-contract subset of the canonical **risk signals** in `ship`'s `references/risk-signals.md`) — `mode=fast` is refused. Surface the external consumers and force `balanced` or `production`. The "NEVER delete code that is part of a public/external contract" rule below is universal across modes.
 
 **Phase-gated NEVER scope.** When `mode=fast` is in effect, the boundary-confirmation discipline of Phase 1 and the orphan-resweep guarantee of Phase 5 are explicitly suspended for the run — fast mode trades exhaustiveness for speed on obvious deletions. The remaining NEVERs (no string/dynamic-reference miss, no migration history edits, no shared-utility assumption, no scope creep, no public-contract delete, no Phase-6 stub, no mega-commit) stay in force in every mode.
 
@@ -116,6 +116,8 @@ Run the project's actual checks (type-check, lint with unused-import rules, test
 
 If a check doesn't exist in this project (no test suite, no type-checker, no linter), note the gap in the PR/removal report rather than skipping silently — coverage holes are themselves part of the removal's risk surface.
 
+**Coverage-delta check.** Phase 4 deletes the feature's tests *first*, so the suite can stay green while coverage of *surviving* paths silently drops — e.g. a shared helper whose only test lived in the deleted feature's test file now has none. If the project reports coverage, capture it before Phase 4 and compare after; otherwise, for each caller classified "shared" in Phase 3, confirm a surviving test still exercises it. Report any surviving path that lost its only coverage as part of the removal's risk surface — a green suite after a deletion is not proof the survivors are still covered.
+
 If any check fails, the failure points to either (a) a missed reference (go back to Phase 2) or (b) a "shared" caller misclassified as "feature-only" in Phase 3. Fix the root cause; do not paper over with a stub.
 
 **Exit condition:** all checks pass and the user has confirmed the removal, or you have flagged remaining items (e.g., "DB column drop deferred to migration #N").
@@ -124,10 +126,11 @@ If any check fails, the failure points to either (a) a missed reference (go back
 
 ## Adjunct skill routing
 
-After Phase 4 and before declaring verification complete, run only the adjuncts whose gates match the deletion. Honor `skip=` from the caller.
+Run these **after Phase 5's re-sweep has stabilized the tree** (running reviewers on a tree that still contains orphans produces noise) and before declaring Phase 6 verification complete. Run only the adjuncts whose gates match the deletion. Honor `skip=` from the caller.
 
 - `agentsystem-core:add-migration` — when the removal changes schema, drops/stops-writing columns, removes enum values from persisted rows, changes indexes/constraints, or requires a backfill/purge/historical-data decision.
 - **`reviewer-data-integrity`** subagent (`Agent(subagent_type=reviewer-data-integrity)`) — after any persisted-data, migration, delete cascade, import/export, seed-data, or data-access-invariant change.
+- **`reviewer-security-regression`** subagent (`Agent(subagent_type=reviewer-security-regression)`) — when the deletion removes or reroutes **shared security posture**: auth middleware, rate limiting, a webhook-signature check, input sanitization, CSRF/CORS config, or a permission guard that surviving routes also relied on. A deletion that silently *removes* a control is as dangerous as an addition introducing a hole — and no other routed reviewer covers that class for removals.
 - **`reviewer-contracts`** subagent (`Agent(subagent_type=reviewer-contracts)`) — when the removal touches public URLs, route params, API responses, DTOs, server functions, OpenAPI/tRPC/generated clients, package exports, webhook payloads, or generated schemas.
 - **`reviewer-error-boundaries`** subagent (`Agent(subagent_type=reviewer-error-boundaries)`) — when the removed feature leaves adjacent user flows with changed failure paths, fallback routes, empty states, or loader errors.
 - **`reviewer-client-bundle`** subagent (`Agent(subagent_type=reviewer-client-bundle)`) — when the removal deletes or moves client routes/components/dependencies and may leave stale dynamic imports, unused large deps, or server/client import drift.

@@ -9,12 +9,14 @@ description: >-
   mess", "organize this directory", "regroup these files", "tidy up public/",
   "group these images", "restructure assets/", "this folder needs structure",
   or points at a flat pile of files and asks for a better layout. Skip for:
-  splitting an oversized single file (use file-modularity), pure renames
+  splitting an oversized single file (use simplify), pure renames
   without grouping (use a rename refactor), or removing dead files (use
-  rip-out).
+  remove-feature).
 ---
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
 
 
 # Regroup loose files into a coherent layout, fix every pointer
@@ -162,6 +164,6 @@ Report back:
 
 ## Sibling skills
 
-- `file-modularity` — when a file is too large and should be split, not relocated
+- `agentsystem-core:simplify` — when a file is too large and should be split, not relocated (also runs as the post-move cleanup below)
 - `sync-docs` — if the move changes documented paths in README or setup guides
 - `agentsystem-core:simplify` — after the move, sweep the diff for now-redundant glue, dead re-exports, and duplicated helpers that the regrouping makes visible

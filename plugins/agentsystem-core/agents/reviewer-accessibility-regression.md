@@ -35,8 +35,8 @@ Filter to `*.tsx`, `*.jsx`. Skip `*.test.*`, `*.stories.*`, `*.d.ts`.
 #### Detector A — Icon-only button without accessible name (**HIGH**)
 
 ```bash
-rg -n --type tsx -E '<button[^>]*>\s*<(\w+Icon|\w+)\s*/>' <scope>
-rg -n --type tsx -E '<Button[^>]*>\s*<(\w+Icon|\w+)\s*/>' <scope>
+rg -n --type ts -e '<button[^>]*>\s*<(\w+Icon|\w+)\s*/>' <scope>
+rg -n --type ts -e '<Button[^>]*>\s*<(\w+Icon|\w+)\s*/>' <scope>
 ```
 
 For each hit: check for `aria-label`, `aria-labelledby`, or visible text. If none: **HIGH**. Mark `auto-fixable: true` only when the icon's component name strongly suggests a label (`<TrashIcon />` → `aria-label="Delete"`, `<XIcon />` inside a Dialog close button → `aria-label="Close"`). Otherwise `auto-fixable: false`.
@@ -44,7 +44,7 @@ For each hit: check for `aria-label`, `aria-labelledby`, or visible text. If non
 #### Detector B — Custom clickable `<div>` / `<span>` (**HIGH**)
 
 ```bash
-rg -n --type tsx -E '<(div|span)[^>]*\bonClick' <scope>
+rg -n --type ts -e '<(div|span)[^>]*\bonClick' <scope>
 ```
 
 A `<div onClick>` is keyboard-inaccessible by default. Mark `auto-fixable: true` (replace with `<button type="button">`) ONLY when:
@@ -56,7 +56,7 @@ If either fails: `auto-fixable: false` — recommend convert OR add `role="butto
 #### Detector C — `<label>` not associated with input (**MEDIUM**)
 
 ```bash
-rg -n --type tsx -E '<label[^>]*>' <scope>
+rg -n --type ts -e '<label[^>]*>' <scope>
 ```
 
 For each label: check for `htmlFor=` matching an input's `id`, OR the input nested inside the label. If neither: **MEDIUM**. Mark `auto-fixable: true` when there's exactly one nearby `<input>`/`<textarea>`/`<select>` with an `id`.
@@ -64,8 +64,8 @@ For each label: check for `htmlFor=` matching an input's `id`, OR the input nest
 #### Detector D — Form error not associated with field (**MEDIUM**)
 
 ```bash
-rg -n --type tsx -F 'errors.' <scope>
-rg -n --type tsx -F 'formState.errors' <scope>
+rg -n --type ts -F 'errors.' <scope>
+rg -n --type ts -F 'formState.errors' <scope>
 ```
 
 For each rendered error message: check whether the corresponding input has `aria-describedby` pointing at the error's `id` AND `aria-invalid={true}` when invalid. If missing: **MEDIUM**. `auto-fixable: false` — wiring requires reading the form-library API and naming convention.
@@ -73,7 +73,7 @@ For each rendered error message: check whether the corresponding input has `aria
 #### Detector E — Dialog without focus trap or initial focus (**HIGH**)
 
 ```bash
-rg -n --type tsx -E '<(Dialog|Modal|Sheet|Drawer)\b' <scope>
+rg -n --type ts -e '<(Dialog|Modal|Sheet|Drawer)\b' <scope>
 ```
 
 For each custom (non-Radix/non-shadcn) dialog: check that the file imports a focus-trap utility (`focus-trap-react`, `react-focus-lock`, `<FocusScope>`, Radix primitives). Vanilla portal + manual implementation with no trap: **HIGH**. `auto-fixable: false` — recommend switching to the project's existing dialog primitive (locate by grep).
@@ -83,14 +83,14 @@ If the dialog uses Radix `<DialogPrimitive>` or shadcn `<Dialog>`, focus is hand
 #### Detector F — Image / decorative element missing `alt` (**MEDIUM**)
 
 ```bash
-rg -n --type tsx -E '<img\b' <scope>
+rg -n --type ts -e '<img\b' <scope>
 ```
 
 For each `<img>`: check for `alt=`. If missing: **MEDIUM**. Mark `auto-fixable: true` (set `alt=""`) ONLY when the image is decorative-by-context (sibling already labels the surface, OR the file/variable name contains `decorative|background|bg`). Otherwise `auto-fixable: false` — alt text is a content decision the user owns.
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## A11y regression scan — <N> findings

@@ -1,11 +1,18 @@
 ---
 name: add-empty-error-states
-description: Sibling to add-skeleton-loaders. After data fetching is wired in a route or component, verify and auto-fix the two non-loading states most often forgotten — empty (the request succeeded but returned zero items / null) and error (the request failed). Empty states get a clear message + primary call-to-action. Error states get a human-readable message + retry affordance + (in dev) a way to surface the actual error. Uses the project's existing UI primitives — shadcn `<EmptyState />` if present, project conventions otherwise. Does NOT cover loading skeletons. Trigger phrases — "add empty state", "what if this list is empty", "add error state", "handle the error case", "/add-empty-error-states", "error UI", "no results UI", any time a route was just wired with `useQuery` / `useSuspenseQuery` / loader. Skip for — pure static pages, mutations (useMutation has different patterns), modals/dialogs whose empty state is the parent's responsibility.
+description: Sibling to polish-ui's loading-state checklist. After data fetching is wired in a route or component, verify and auto-fix the two non-loading states most often forgotten — empty (the request succeeded but returned zero items / null) and error (the request failed). Empty states get a clear message + primary call-to-action. Error states get a human-readable message + retry affordance + (in dev) a way to surface the actual error. Uses the project's existing UI primitives — shadcn `<EmptyState />` if present, project conventions otherwise. Does NOT cover loading skeletons. Trigger phrases — "add empty state", "what if this list is empty", "add error state", "handle the error case", "/add-empty-error-states", "error UI", "no results UI", any time a route was just wired with `useQuery` / `useSuspenseQuery` / loader. Skip for — pure static pages, mutations (useMutation has different patterns), modals/dialogs whose empty state is the parent's responsibility.
 ---
+
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
 
 # Add Empty / Error States
 
 A page in three states: loading, empty, error. The fast-path "data shows up" gets all the design attention; the other two get inherited from whatever the renderer falls back to. This skill catches both.
+
+> **Sibling reviewers.** This skill *introduces* the empty/error UI for a newly-wired surface. Its read-only counterparts audit existing/changed surfaces without adding primitives: `reviewer-error-boundaries` (failure-path coverage — blank screens, unhandled rejections, double-submit-on-failure) and `reviewer-loading-states` (async-UX consistency). Loading skeletons are `polish-ui`'s job, not this skill's. When a caller has already run those reviewers, this skill only fills the empty/error gaps they deferred here.
 
 ---
 
@@ -30,7 +37,7 @@ For each fetch, verify the component handles all three of:
 
 | Branch | Trigger | Treatment |
 |---|---|---|
-| Loading | first render before data resolves | Skeleton (handled by add-skeleton-loaders, out of scope here). |
+| Loading | first render before data resolves | Skeleton (handled by polish-ui's loading-state checklist, out of scope here). |
 | Empty | data resolved but is `null`, `undefined`, `[]`, or otherwise represents "nothing" | Empty state UI. |
 | Error | query/loader threw or returned an error | Error state UI. |
 
@@ -63,7 +70,12 @@ For each MISSING or WEAK state, apply the inline fix:
 ### Empty state pattern
 
 ```tsx
-const { data: posts } = useQuery(postsQueryOptions())
+const { data: posts, isPending } = useQuery(postsQueryOptions())
+
+// Loading FIRST — `posts` is `undefined` until the query resolves, so checking
+// `posts.length` before this guard throws (see NEVER: never conflate empty with loading).
+// The skeleton itself is polish-ui's job; here we just avoid the empty flash.
+if (isPending) return <PostsSkeleton />
 
 if (posts.length === 0) {
   return (
@@ -111,7 +123,9 @@ The error state must:
 
 If the route is using `useSuspenseQuery`, place the error UI in the route's `errorComponent` (or a `<ErrorBoundary>` wrapping the suspense boundary), not in the component body.
 
-**Exit:** each previously MISSING/WEAK state is now OK.
+**Typecheck gate.** After applying the fixes, run the project's typecheck. An empty/error branch that references a wrong field (`posts` vs `data`), a missing import (`<EmptyState>` not imported), or the wrong query state is a build break — this is a multi-file inline editor, so catch it here, not in review.
+
+**Exit:** each previously MISSING/WEAK state is now OK **and the typecheck passes**.
 
 ---
 

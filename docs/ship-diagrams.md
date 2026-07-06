@@ -140,7 +140,7 @@ sequenceDiagram
 
     rect rgb(255,250,240)
     Note over AF: Phase 7 — Gated Reviews (parallel fan-out)
-    AF->>Sub: reviewer-duplication (always)
+    AF->>Sub: reviewer-code + utility-finder (code review + duplication, always)
     AF->>Sub: reviewer-security-regression / reviewer-authz
     AF->>Sub: reviewer-perf
     AF->>Sub: reviewer-contracts
@@ -154,9 +154,8 @@ sequenceDiagram
     Sub-->>AF: severity-ranked findings
     AF->>AF: apply auto-fixable; surface rest
 
-    AF->>Stack: code-enforce-route-data / code-enforce-layers (TanStack)
     AF->>Stack: add-migration (backend)
-    AF->>Stack: add-form / add-skeleton-loaders / add-empty-error-states (UI)
+    AF->>Stack: polish-ui / add-empty-error-states (UI)
     end
 
     rect rgb(245,245,255)
@@ -238,7 +237,7 @@ sequenceDiagram
     rect rgb(240,255,245)
     Note over MF: Stack-conditional
     MF->>Backend: add-migration → add-observability
-    MF->>Backend: add-form / add-skeleton-loaders / add-empty-error-states (TanStack)
+    MF->>Backend: polish-ui / add-empty-error-states (UI)
     end
 
     rect rgb(255,245,245)
@@ -411,7 +410,7 @@ sequenceDiagram
 
 ## 6. AUDIT → `audit` (whole-codebase tech-debt sweep)
 
-Heavier than `simplify`, slower than any single `code-check-*`. Maps architecture first, then orchestrates the full reviewer battery.
+Heavier than `simplify`, slower than any single `audit-*`. Maps architecture first, then orchestrates the full reviewer battery.
 
 ```mermaid
 sequenceDiagram
@@ -446,9 +445,11 @@ sequenceDiagram
     rect rgb(255,245,245)
     Note over A: Phase 4 — Parallel audit fan-out (whole repo)
     par Parallel reviewer subagents
-        A->>Sub: reviewer-duplication
+        A->>Cleanup: simplify (DRY / duplication)
     and
         A->>Sub: reviewer-security-regression
+    and
+        A->>Sub: reviewer-authz
     and
         A->>Sub: reviewer-perf
     and
@@ -468,7 +469,7 @@ sequenceDiagram
     and
         A->>Sub: reviewer-client-bundle
     and
-        A->>Cleanup: harden-types · audit-perf · audit-a11y ·<br/>audit-responsive · audit-seo-meta · audit-analytics
+        A->>Cleanup: harden-types · audit-a11y (whole-app)
     end
     Sub-->>A: severity-ranked findings (deduped)
     end
@@ -495,7 +496,7 @@ sequenceDiagram
 
 **Teaching points**
 
-- `mode=fast` runs only `simplify` + duplication + typecheck/lint. `balanced` adds the high-leverage audits. `production` runs everything.
+- `mode=fast` runs only `simplify` + `harden-types` + typecheck/lint. `balanced` adds the high-leverage audits. `production` runs everything.
 - Mechanical fixes auto-apply; structural ones gate per-item.
 - The dirty-tree check at Phase 1 prevents tangling WIP with audit findings.
 
@@ -541,7 +542,7 @@ flowchart TB
     end
 
     subgraph REV["Reviewer subagents (severity-ranked findings)"]
-        R1[reviewer-duplication]
+        R1[reviewer-code]
         R2[reviewer-security-regression]
         R3[reviewer-authz]
         R4[reviewer-perf]
@@ -571,16 +572,18 @@ flowchart TB
     FB --> I4
 
     AF --> R1 & R2 & R3 & R4 & R5 & R6 & R7 & R8 & R9 & R10 & R11 & R12
-    MF --> R5 & R6 & R7 & R8 & R2 & R3 & R9 & R10 & R11 & R12
-    FB --> R5 & R6 & R8 & R9
-    RF --> R5 & R7
-    AU --> R1 & R2 & R4 & R5 & R6 & R7 & R8 & R9 & R10 & R11 & R12
+    MF --> R1 & R2 & R3 & R5 & R6 & R7 & R8 & R9 & R10 & R11 & R12
+    FB --> R1 & R3 & R5 & R6 & R7 & R8 & R9
+    RF --> R2 & R5 & R7
+    AU --> R2 & R3 & R4 & R5 & R6 & R7 & R8 & R9 & R10 & R11 & R12
 ```
+
+> **Newer reviewers (not drawn above, same contract):** `reviewer-test-quality` (gates Phase 8's generated tests), `reviewer-boundary-validation` (the read-only sibling of `harden-types` — flags unvalidated request/message input), and `reviewer-dependencies` (lockfile-diff gate on `package.json` changes: advisories, install scripts, license, secret literals). All follow the shared `findings-contract.md` (CRITICAL/HIGH/MEDIUM/LOW + `auto-fixable`).
 
 **Teaching points**
 
-- Reviewers are **read-only**. They report; the parent skill applies `auto-fixable: true` items mechanically and surfaces structural ones to the user.
-- Investigation subagents return **structured inventories**, not advice — the parent skill makes the decision.
+- Reviewers are **read-only**. They report; the parent skill applies `auto-fixable: true` items mechanically and surfaces structural ones to the user. Every reviewer conforms to `plugins/agentsystem-core/findings-contract.md`.
+- Investigation subagents return **structured inventories**, not advice — the parent skill makes the decision. The read-only helpers (`crud-surface-mapper`, `ui-pattern-inspector`, `utility-finder`) carry no `Bash` and are pinned to a cheaper model tier — least-privilege, structurally enforced.
 - The same subagent (e.g. `runtime-contract-tracer`) is called by `add-feature`, `modify-feature`, and `fix-bug` because the underlying need (trace an integration) is the same.
 
 ---
@@ -594,7 +597,7 @@ flowchart LR
         F2["modify-feature: skip 4 pre-flight Qs"]
         F3["fix-bug: workflow trimmed"]
         F4["remove-feature: skip Phase 1 + 5"]
-        F5["audit: simplify + duplication + lint only"]
+        F5["audit: simplify + harden-types + lint only"]
     end
 
     subgraph BAL["mode=balanced (default for most)"]
@@ -610,7 +613,7 @@ flowchart LR
         P2["modify-feature: + scope-confirm gate at 5+ sites"]
         P3["fix-bug: + add-regression-test"]
         P4["remove-feature: + adjacent-feature smoke check"]
-        P5["audit: every code-check-* skill"]
+        P5["audit: every reviewer-* / audit-* skill"]
     end
 
     SAFETY["Mode-safety override:<br/>fast + (auth · payments · migrations ·<br/>jobs · webhooks · destructive deletes)<br/>→ AskUserQuestion confirm"]

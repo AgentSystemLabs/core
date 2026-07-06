@@ -3,6 +3,9 @@ name: audit-seo-meta
 description: Per-route SEO and social-share metadata audit — checks `<title>`, meta description, canonical URL, Open Graph tags (og:title, og:description, og:image, og:url, og:type), Twitter card tags, viewport, robots directives, and the presence of a sitemap and robots.txt. For TanStack Start, reads route `head()` exports; for Next.js, reads `metadata` / `generateMetadata`; for plain HTML, reads `<head>`. Reports per-route findings with severity, plus repo-level findings (missing sitemap, no robots.txt, missing default OG image asset). Auto-fixes only the trivial defaults (boilerplate viewport meta, repo-level sitemap stub) with explicit user approval; route-specific copy is reported, never invented. Trigger phrases — "seo audit", "audit meta tags", "check og tags", "social share preview", "/audit-seo-meta", "missing meta description", "fix sharing preview", "twitter card", "canonical url". Skip for — apps that are intentionally non-public (auth-walled SaaS dashboards), purely internal tools, and pages explicitly marked `noindex`.
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+
 # Audit SEO Meta
 
 The audit ranks findings by what users see (broken share previews, no description in search results) above what crawlers theoretically prefer. A perfect score on heuristics that don't move SERP placement is wasted attention.

@@ -49,24 +49,17 @@ Run **before** any commit composition. The user said they want commits to be goo
 
 **Always run (all modes):**
 
-1. **Secrets scan — content, not just filenames.** Greps the full diff (`git diff HEAD` + untracked files about to be staged) for high-confidence patterns: AWS access keys (`AKIA[0-9A-Z]{16}`), generic API key shapes (`(api[_-]?key|secret|token|password)\s*[:=]\s*["'][^"']{16,}["']`), Stripe/Slack/GitHub tokens (`sk_live_`, `xox[bopas]-`, `ghp_`, `ghs_`, `gho_`), PEM blocks (`-----BEGIN .* PRIVATE KEY-----`), generic 32+ char hex/base64 assigned to a name containing `secret|key|token|password`. **Block** if any match — surface file:line, ask via `AskUserQuestion` to (a) abort so the user can scrub, (b) confirm the match is a false positive (test fixture, example, redacted placeholder).
+1. **Canonical residue + secrets sweep.** Run the residue + secrets sweep defined in `agentsystem-core:check-pr-readiness` (its Phase 5 is the single source of truth) against the full diff (`git diff HEAD` + untracked files about to be staged) — it covers hardcoded-secret literals (`AKIA…`, `sk_live_`, `ghp_`, PEM private-key blocks, secret-named 32+ char values), `console.*` / `debugger` / `.only` / `.skip`, newly-added `TODO:` / `FIXME:` / `XXX:`, and merge-conflict markers — so this skill never drifts from the canonical list. **Hard-block** on secret literals and merge-conflict markers in *every* mode; on a secret hit surface file:line and ask via `AskUserQuestion` to (a) abort so the user can scrub, or (b) confirm a false positive. **Mode-dependent action for the rest:** `fast` warns and asks to proceed; `balanced` / `production` block on `.only` / `debugger`, warn on the remainder.
 2. **Secret-shaped filenames.** Already enumerated in Step 1 logic below (`.env*`, `*.key`, `*.pem`, `id_rsa*`, `credentials*`). Surface and default-exclude.
-3. **Residue sweep — diff only.** Grep the staged + unstaged diff (not the whole repo) for:
-   - `console.log` / `console.debug` / `dbg!` / `print(` in non-test source files (the project's logger if detected — keep it; raw `console.log` — flag it).
-   - `.only(` / `.skip(` / `fit(` / `xit(` / `describe.only` / `test.only` in test files.
-   - `debugger;` / `breakpoint()` statements.
-   - New `TODO:` / `FIXME:` / `XXX:` lines added in this diff.
-   - Merge-marker leftovers: `<<<<<<<`, `=======`, `>>>>>>>` (always a hard block).
-   **Mode-dependent action:** `fast` warns and asks to proceed; `balanced` / `production` block on `.only` / `debugger` / merge-markers, warn on the rest.
 
 **Mode `balanced` adds:**
 
-4. **Typecheck on changed files** — detect via `package.json` scripts (`typecheck`, `type-check`, `tsc`) or by running `npx tsc --noEmit` if a `tsconfig.json` exists. For Python: `mypy` if configured. For Go: `go vet`. Block on any error introduced by the diff.
-5. **Lint on changed files** — detect via `package.json` scripts (`lint`) or `eslint`/`biome`/`ruff`/`golangci-lint` configs. Run scoped to changed paths when the tool supports it. Block on errors; warn on warnings.
+3. **Typecheck on changed files** — detect via `package.json` scripts (`typecheck`, `type-check`, `tsc`) or by running `npx tsc --noEmit` if a `tsconfig.json` exists. For Python: `mypy` if configured. For Go: `go vet`. Block on any error introduced by the diff.
+4. **Lint on changed files** — detect via `package.json` scripts (`lint`) or `eslint`/`biome`/`ruff`/`golangci-lint` configs. Run scoped to changed paths when the tool supports it. Block on errors; warn on warnings.
 
-**Mode `production` (default) replaces 4–5 with:**
+**Mode `production` (default) replaces 3–4 with:**
 
-6. **Invoke `agentsystem-core:check-pr-readiness`** against `HEAD` vs. the base branch (or `HEAD` against an empty tree for the initial commit). Its full gauntlet — typecheck, lint, formatter, test suite, residue sweep, large-file additions, lockfile drift — runs. **Any red gate blocks Step 1.** Pipe its report through verbatim; do not summarize away failures.
+5. **Invoke `agentsystem-core:check-pr-readiness`** against `HEAD` vs. the base branch (or `HEAD` against an empty tree for the initial commit). Its full gauntlet — typecheck, lint, formatter, test suite, canonical residue + secrets sweep, large-file additions, lockfile drift — runs. **Any red gate blocks Step 1.** Pipe its report through verbatim; do not summarize away failures.
 
 **On block:** stop. Print the failing gate(s) with the exact reproduction command. Ask via `AskUserQuestion`:
 - **Fix and re-run** → exit, let the user fix, re-invoke `/commit` to start fresh.

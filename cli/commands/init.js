@@ -1,8 +1,31 @@
-import { mkdirSync, existsSync, cpSync, copyFileSync } from 'node:fs';
+import { mkdirSync, existsSync, cpSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { convertAgentToCodexToml, normalizeCodexSkill } from '../lib/codex.js';
 import { convertAgentToOpencodeMd, normalizeOpencodeSkill } from '../lib/opencode.js';
-import { resolveAgentsDest, resolveDest, resolveHarness } from '../lib/paths.js';
+import { resolveAgentsDest, resolveDest, resolveHarness, packageRoot } from '../lib/paths.js';
+
+const VERSION_STAMP = '.agentsystem-version';
+
+function currentVersion() {
+  try {
+    return (
+      JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8')).version ||
+      '0.0.0'
+    );
+  } catch {
+    return '0.0.0';
+  }
+}
+
+function readStamp(dir) {
+  const path = join(dir, VERSION_STAMP);
+  if (!existsSync(path)) return null;
+  try {
+    return readFileSync(path, 'utf-8').trim().split('\n')[0] || null;
+  } catch {
+    return null;
+  }
+}
 import {
   discoverAgents,
   discoverSkills,
@@ -42,10 +65,18 @@ export async function initCommand(opts) {
 
   mkdirSync(dest, { recursive: true });
 
+  const version = currentVersion();
+  const previousVersion = readStamp(dest);
+
   const targetLabel = opts.dest
     ? `custom destination for ${harness.name}`
     : `${opts.global ? 'global ' : ''}${harness.name}`;
   console.log(`Installing AgentSystem skills for ${targetLabel}: ${dest}`);
+  if (previousVersion && previousVersion !== version) {
+    console.log(`Updating installed copy: v${previousVersion} → v${version} (pass --force to overwrite existing files)`);
+  } else if (previousVersion === version) {
+    console.log(`AgentSystem v${version} already installed — refreshing.`);
+  }
   console.log('');
 
   let skillsInstalled = 0;
@@ -95,9 +126,18 @@ export async function initCommand(opts) {
     }
   }
 
+  // Stamp the installed version so a later `agentsystem init` can detect a stale
+  // copy (harness copies otherwise drift silently from the published package).
+  try {
+    writeFileSync(join(dest, VERSION_STAMP), `${version}\n`);
+    if (agents.length > 0) writeFileSync(join(agentsDest, VERSION_STAMP), `${version}\n`);
+  } catch {
+    // Non-fatal: a read-only dest just doesn't get a stamp.
+  }
+
   console.log('');
   console.log(
-    `Installed ${skillsInstalled} skill${skillsInstalled === 1 ? '' : 's'} to ${dest}`
+    `Installed ${skillsInstalled} skill${skillsInstalled === 1 ? '' : 's'} (v${version}) to ${dest}`
   );
   if (skillsSkipped > 0) console.log(`Skipped ${skillsSkipped} skill${skillsSkipped === 1 ? '' : 's'} (already present)`);
   if (agents.length > 0) {

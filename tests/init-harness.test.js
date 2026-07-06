@@ -87,8 +87,10 @@ const HARNESS_ASSERTIONS = {
     assertAgent(content) {
       assert.match(content, /^mode: subagent/m);
       assert.match(content, /^permission:/m);
+      // utility-finder is a least-privilege read-only helper (tools: Read, Grep, Glob —
+      // no Bash) → both edit and bash denied. Permissions are derived from `tools:`.
       assert.match(content, /^\s+edit: deny/m);
-      assert.match(content, /^\s+bash: allow/m);
+      assert.match(content, /^\s+bash: deny/m);
       assert.match(content, /^# utility-finder/m);
     },
   },
@@ -151,6 +153,18 @@ describe('init harness installs', () => {
 
         expectations.assertSkill(skillContent);
         expectations.assertAgent(agentContent);
+
+        // Regression: OpenCode permissions are derived from each agent's `tools:`,
+        // so an *editing* agent (pr-comment-resolver declares Edit + Write) must
+        // get edit: allow — the old hardcoded edit: deny broke it.
+        if (harness === 'opencode') {
+          const editingAgent = readText(join(agentsDest, 'pr-comment-resolver.md'));
+          assert.match(
+            editingAgent,
+            /^\s+edit: allow/m,
+            'editing agent (pr-comment-resolver) must get edit: allow'
+          );
+        }
 
         const installedSkills = readdirSync(skillsDest).filter(entry =>
           statSync(join(skillsDest, entry)).isDirectory()

@@ -5,6 +5,8 @@ description: Tighten TypeScript safety in changed files — strip `any`, dangero
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
 
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
 
 # Code Harden Types
 
@@ -14,7 +16,14 @@ Each occurrence is examined and classified before any edit. One wrong cast remov
 
 ## Phase 1 — Scope
 
-Scope = explicit user paths if given, else `git diff --name-only $(git merge-base HEAD origin/main)` filtered to `*.ts`/`*.tsx`, minus generated dirs (`drizzle/`, `__generated__/`, `dist/`, `build/`, `*.gen.ts`, `*.d.ts`).
+Scope = explicit user paths if given, else the diff against the branch's merge-base with the repo's default branch — resolve it, don't hardcode `origin/main`:
+
+```bash
+BASE=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+git diff --name-only "$(git merge-base HEAD "$BASE")"
+```
+
+filtered to `*.ts`/`*.tsx`, minus generated dirs (`drizzle/`, `__generated__/`, `dist/`, `build/`, `*.gen.ts`, `*.d.ts`).
 
 **Exit:** the exact list of files to scan is fixed.
 
@@ -74,7 +83,9 @@ For each MECHANICAL occurrence, apply the matching fix:
 
 After each file's edits, run the project's typecheck. Detect from `package.json` scripts in this order: `typecheck`, `check-types`, `tsc`. If none exists, fall back to `npx tsc --noEmit -p <nearest tsconfig.json>` (walk up from the edited file). The build must stay green file-by-file. If a fix produces new errors elsewhere, revert that one fix and re-classify it as STRUCTURAL.
 
-**Exit:** typecheck passes; every MECHANICAL item is either fixed or downgraded to STRUCTURAL.
+**Boundary-schema safety: run the tests, not just the typecheck.** If any fix inserted a runtime `Schema.parse(...)` at a boundary (the "Boundary entry without validator" and "`as unknown as T` over a JSON parse/fetch/message handler" rows), run the project's **test suite** afterward — not just `tsc`. A typecheck cannot catch an *over-strict* schema that rejects valid production input, which is this skill's stated core risk ("one over-eager zod schema rejects valid input in production"). If a test fails on the new schema, loosen it to match the real payload shape and re-run; if no test covers that boundary, surface it as a STRUCTURAL follow-up ("the new schema is unverified — no test exercises this boundary").
+
+**Exit:** typecheck passes; boundary-schema insertions have a green test run (or a flagged coverage gap); every MECHANICAL item is either fixed or downgraded to STRUCTURAL.
 
 ---
 

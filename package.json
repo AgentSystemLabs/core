@@ -12,7 +12,7 @@
   "scripts": {
     "test": "node scripts/run-tests.mjs",
     "check:routing": "node scripts/check-skill-routing.mjs",
-    "prepublishOnly": "npm test && node cli/index.js --version"
+    "prepublishOnly": "npm test && npm run check:routing && node cli/index.js --version"
   },
   "files": [
     "cli",

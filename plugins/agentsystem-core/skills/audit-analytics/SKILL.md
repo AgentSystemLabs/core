@@ -3,6 +3,9 @@ name: audit-analytics
 description: Audit analytics event tracking across a route, feature, or the whole client surface — verifies that important user actions emit events, that event names match the project's existing taxonomy (snake_case vs camelCase, prefix conventions, verb tense), that property names are consistent across siblings, and that no PII (emails, raw user IDs in some setups, secrets) is being shipped in event properties. Detects the project's analytics SDK (PostHog, Amplitude, Segment, Mixpanel, GA4, custom wrapper) by import; uses the project's existing event catalog as the convention source if one exists. Reports gaps and inconsistencies; never invents events. Trigger phrases — "audit analytics", "check event tracking", "/audit-analytics", "are we tracking X", "missing events on this page", "event taxonomy", "are events consistent", "PII in analytics". Skip for — projects with no analytics SDK installed, server-only analytics (different concerns; out of scope here), and one-off internal admin pages explicitly excluded from tracking.
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+
 # Audit Analytics
 
 The bug class this skill targets is silent under-tracking: a feature ships, looks fine, but the team can't tell whether anyone uses it because no events were wired. Second class: drift — `signup_completed` here, `SignupCompleted` there, `user_signed_up` somewhere else, all measuring the same thing.

@@ -1,7 +1,12 @@
 ---
 name: add-migration
-description: Generate and review a Drizzle (or Prisma / Knex / raw SQL) migration safely — classifies the change as additive, mutating, or destructive; for mutating/destructive changes, splits into a multi-phase plan (deploy code that tolerates both shapes → migrate → deploy code that requires the new shape). Catches the landmines: NOT NULL on a populated column without backfill, dropping a column still referenced by old code, adding a unique constraint with existing duplicates, large-table index without `CONCURRENTLY`, type changes that rewrite the table, default values evaluated at migration time vs. row time. Trigger phrases — "add a migration", "schema change", "add column to X", "drop column X", "rename column", "add index", "/add-migration", "drizzle migration", "alter table". Skip for — pure code changes with no schema impact, seed-data-only changes (use add-seed-data), and infra-level changes (DB version upgrades, replication setup).
+description: Generate and review a Drizzle (or Prisma / Knex / raw SQL) migration safely — classifies the change as additive, mutating, or destructive; for mutating/destructive changes, splits into a multi-phase plan (deploy code that tolerates both shapes → migrate → deploy code that requires the new shape). Catches the landmines: NOT NULL on a populated column without backfill, dropping a column still referenced by old code, adding a unique constraint with existing duplicates, large-table index without `CONCURRENTLY`, type changes that rewrite the table, default values evaluated at migration time vs. row time. Trigger phrases — "add a migration", "schema change", "add column to X", "drop column X", "rename column", "add index", "/add-migration", "drizzle migration", "alter table". Skip for — pure code changes with no schema impact, seed-data-only changes, and infra-level changes (DB version upgrades, replication setup).
 ---
+
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+> **Mode-less.** This skill takes no `mode=` — callers gate *whether* to invoke it, not how deep it runs. If you are tempted to add a mode table here, that depth decision belongs to the calling skill.
+
 
 # Code Add Migration
 

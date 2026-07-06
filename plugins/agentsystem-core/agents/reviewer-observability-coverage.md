@@ -42,7 +42,7 @@ Record the detected logger and error reporter. Recommendations must use the exis
 
 ```bash
 rg -n --type ts -F 'createServerFn(' <changed-files>
-rg -n --type ts -E 'export async function (GET|POST|PUT|DELETE|PATCH)' <changed-files>
+rg -n --type ts -e 'export async function (GET|POST|PUT|DELETE|PATCH)' <changed-files>
 ```
 
 For each entry: check whether the function emits at least one log line that names the operation (start log, success log, or boundary log). If none AND the operation is critical-path (auth, payment, write, external API call): **MEDIUM**.
@@ -50,7 +50,7 @@ For each entry: check whether the function emits at least one log line that name
 #### Detector B — Swallowed error in catch block (**HIGH**)
 
 ```bash
-rg -n --type ts -B0 -A5 -E 'catch\s*\(\w*\)\s*\{' <scope>
+rg -n --type ts -B0 -A5 -e 'catch\s*\(\w*\)\s*\{' <scope>
 rg -n --type ts -B0 -A3 -F '.catch(' <scope>
 ```
 
@@ -71,8 +71,8 @@ If received but not threaded through: **MEDIUM**. Without correlation, debugging
 #### Detector D — PII in log line (**HIGH–MEDIUM**)
 
 ```bash
-rg -n --type ts -E 'logger\.\w+\(.*\b(email|password|token|secret|apiKey|ssn|creditCard|cvv|address|phone)' <scope>
-rg -n --type ts -E 'console\.\w+\(.*\b(email|password|token|secret|apiKey|ssn|creditCard|cvv|address|phone)' <scope>
+rg -n --type ts -e 'logger\.\w+\(.*\b(email|password|token|secret|apiKey|ssn|creditCard|cvv|address|phone)' <scope>
+rg -n --type ts -e 'console\.\w+\(.*\b(email|password|token|secret|apiKey|ssn|creditCard|cvv|address|phone)' <scope>
 ```
 
 For each hit, classify the field:
@@ -87,11 +87,11 @@ For new endpoints in critical paths (auth, payment, search, list):
 - Project metrics library (`prom-client`, `@vercel/otel`, `posthog`/`statsig`)?
 - New endpoint emits a duration/success metric?
 
-If yes but missing: **LOW**. If no metrics library at all: downgrade to **INFO** ("no metrics library detected — consider adding").
+If yes but missing: **LOW**. If no metrics library at all: keep at **LOW** ("no metrics library detected — consider adding"). Do not emit an `INFO` tier — the pack-wide scale is CRITICAL/HIGH/MEDIUM/LOW only.
 
 ### Step 3 — Return structured report
 
-Reply with ONLY a findings report in this format. Do not preamble.
+Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
 
 ```
 ## Observability scan — <N> findings (read-only — no auto-fix)

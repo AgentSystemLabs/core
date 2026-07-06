@@ -3,6 +3,9 @@ name: audit-responsive
 description: Static responsive-design audit of a route or component — finds layouts that will break at common viewports (mobile 375, tablet 768, desktop 1280, ultrawide 1920). Detects: fixed widths in pixels for layout containers, horizontal overflow risk (long words, fixed tables, wide fixed grids), missing `flex-wrap`, missing responsive Tailwind variants on grid/flex containers, hardcoded `vh` heights that break with mobile keyboards, font sizes that don't scale, sidebars/navigation with no collapse strategy, modals taller than mobile viewports, images without `max-width: 100%`. Auto-fixes mechanical issues inline (add `flex-wrap`, swap `w-[400px]` for `w-full md:w-[400px]`, add `max-w-full` to images); reports structural ones (a 5-column desktop grid that fundamentally needs a different mobile layout). Trigger phrases — "audit responsive", "check mobile layout", "responsive issues", "/audit-responsive", "does this work on mobile", "tablet view check", "is this layout responsive". Skip for — desktop-only apps explicitly scoped to large viewports (Electron desktop tools, video editing UIs), pure backend, copy edits.
 ---
 
+> **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
+
+
 # Audit Responsive
 
 Static analysis only — the skill reads files, doesn't open a browser. Findings are about constructs known to break at narrow viewports; the user verifies in a real browser after applying fixes.
