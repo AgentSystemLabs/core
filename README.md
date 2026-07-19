@@ -8,6 +8,23 @@ You should almost never call individual skills yourself. Use **`/ship`**.
 
 ---
 
+## Does it actually work? We benchmarked it.
+
+Same 5 feature briefs, same production codebase, same model (Opus 4.8, xhigh) — three ways: a plain prompt, a *"think like a senior engineer"* prompt, and `/ship`. All 15 implementations blind-graded from raw diffs by a stronger model on a fixed rubric.
+
+| | Plain prompt | "Senior engineer" prompt | **/ship** |
+|---|---|---|---|
+| Avg quality /50 | 43.2 | 41.0 | **47.0** |
+| Features won | 0/5 | 0/5 | **5/5** |
+| Crashes shipped | 0 | 1 branch (2 crash classes) | **0** |
+| Invariant tests written | 1/5 branches | 0/5 | **5/5** |
+
+**+9% vs plain prompting, +15% vs persona prompting, zero crashes, and a HIGH-severity authz hole caught by a review gate before it shipped.** The persona prefix actually *underperformed* the plain prompt. Cost of the pipeline: ~81% more tokens.
+
+Every prompt, PR, score, cost, and — importantly — every limitation (sample size, LLM judge, conflict of interest) is documented so you can decide for yourself: **[read the full benchmark →](docs/experiments/2026-07-three-arm-benchmark.md)**
+
+---
+
 ## Use it
 
 ```
