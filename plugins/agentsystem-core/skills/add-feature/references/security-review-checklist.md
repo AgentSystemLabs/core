@@ -12,6 +12,8 @@ Run only when the diff touches server-executed code. Report findings as **blocke
 ## Input Validation & Injection
 - Every input from the client is validated (zod / schema / explicit checks) at the boundary
 - SQL: parameterized queries only; no string concatenation, no template-literal SQL with user input
+- LIKE/ILIKE: user input escaped for `%`/`_` (and the escape char) before interpolation into a pattern — parameterization ≠ wildcard safety; searching "100%" must not match everything
+- Query params: validate/coerce array-shaped params where scalars are expected (`?status[]=x` yields an array — scalar reads throw or silently change query semantics)
 - NoSQL: no operator injection (`$where`, raw queries with user-controlled keys)
 - Shell/exec: no `exec(userInput)`; if shelling out, use argv arrays, not strings
 - Path traversal: any user-supplied path is normalized and confined to an allowed base directory

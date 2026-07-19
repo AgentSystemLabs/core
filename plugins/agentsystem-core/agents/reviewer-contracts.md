@@ -48,7 +48,7 @@ For each changed file, classify what kind of producer it contains:
 
 For each producer found, capture **before** and **after** shape from `git diff`. The diff is the contract change.
 
-### Step 3 — Run four detectors
+### Step 3 — Run five detectors
 
 #### Detector A — Field rename / removal in returned DTO (**HIGH**)
 
@@ -99,6 +99,19 @@ rg -n --type ts -F 'AppRouter' <scope>
 
 If the producer source file's mtime is newer than the generated file's, the client is stale. Report — `auto-fixable: false` (regenerating is a build-tool decision with project-specific args).
 
+#### Detector E — Shared-consumer fan-in for a newly-required field (**HIGH**)
+
+Trigger: the diff (a) adds a required/non-optional field to a shared type consumed by multiple files, OR (b) adds an unguarded field read (`x.field.length`, `x.field.map`, `x.field.toFixed`) to a SHARED component/module — one mounted or imported from more than one place.
+
+```bash
+rg -n --type ts -F '<SharedComponent>' <repo>          # every mounting site
+rg -n --type ts -F '<SharedType>' <repo>               # every consumer of the type
+rg -n --type ts -e 'render\(.*<page-or-props>' <repo>  # Inertia/controller render props
+rg -n --type ts -F '<newField>' <repo>                 # who already supplies it
+```
+
+Enumerate EVERY consumer/mounting site of the shared component and every producer that supplies its props or constructs that type — Inertia `render(...)` props, route loaders, resolvers, serializers, factories — **explicitly including files OUTSIDE the diff**. Flag each producer that does not supply the new field. TypeScript passing is not evidence here: a non-optional TS field on Inertia/loader props is an unenforced claim about producers — the compiler never sees the PHP/server side that builds the props, so the page breaks at runtime on every unchanged mounting site. `auto-fixable: false` — each missing producer needs a domain decision about what value to supply.
+
 ### Step 4 — Return structured report
 
 Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
@@ -139,7 +152,7 @@ If there are zero findings, return exactly: `No contract drift detected.`
 - **NEVER edit files.** Read-only. Parent applies any auto-fixable renames; structural mismatches go to the user.
 - **NEVER mark a removal or semantic change as `auto-fixable: true`.** A removed field means the caller has no substitute — the parent picking an arbitrary fallback hides a real product bug behind a green build.
 - **NEVER regenerate OpenAPI/tRPC/client files.** Codegen has project-specific args and side effects; report staleness with the regen command if discoverable.
-- **NEVER scan the whole repo when a diff exists.** Default to diff scope; whole-repo only on explicit parent request.
+- **NEVER scan the whole repo when a diff exists.** Default to diff scope; whole-repo only on explicit parent request. **Exception: Detector E.** When the diff changes a shared contract (shared component props, shared type, newly-required field), you MUST trace its consumers and producers even when they live outside the diff — that fan-in trace is targeted follow-the-contract search, not a whole-repo scan, and skipping it is exactly how a shared-component change ships broken on every unchanged page.
 - **NEVER report a "drift" without showing both shapes.** Each finding lists producer file:line AND consumer file:line, with the field names on each side. A finding the user can't verify in 10 seconds gets ignored.
 - **NEVER flag a field intentionally hidden from the DTO.** Treat omitted sensitive fields (`password_hash`, `internal_notes`) as design choices unless the diff shows the omission was accidental (added to DB without matching addition on the way out).
 - **NEVER ask the parent or user clarifying questions.** Make a defensible call and flag uncertainty in the finding rather than blocking on a question.

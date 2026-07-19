@@ -14,6 +14,18 @@ The tax on a vibe coder is choosing which skill to invoke and how thorough to be
 
 ---
 
+## Run preamble — announce the plugin version
+
+At the start of every run, read the plugin version from the plugin manifest — `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` if that env var exists, else the `.claude-plugin/plugin.json` two directories above this skill file — and announce it in the first status line, e.g.:
+
+```
+🚢 /ship (agentsystem-core v0.52.0) — pipeline: …
+```
+
+If the manifest can't be found, say "version unknown" rather than failing. The version line tells the user (and any later defect audit) exactly which generation of the gates ran.
+
+---
+
 ## Step 1 — Classify intent
 
 Read the user's prompt and map to one of six core skills:
@@ -60,6 +72,13 @@ Three modes — `fast`, `balanced`, `production`. Pick one before announcing.
 
 **Override:** explicit `mode=fast`, `mode=balanced`, or `mode=production` in the user's prompt always wins — except when it conflicts with a high-risk signal (see NEVER below).
 
+**Headless option (`headless=true`).** Also triggered by the word "headless" anywhere in the invocation. Headless removes user interaction, NOT rigor — it skips QUESTIONS, never QUALITY gates:
+
+- **Never call `AskUserQuestion`.** Every point where this skill would ask (intent disambiguation at Step 1, production "Proceed with this pipeline?" at Step 3, the mode-conflict prompt in NEVER) auto-resolves with best judgement instead. **Record each assumption** ("Assumed: EVOLVE over CREATE because the route already exists") in the run-state artifact and surface them all in the Step 5 report.
+- **Forward `headless=true` to the routed skill** (add-feature / modify-feature / fix-bug / etc.) alongside `mode=`, so its own question points (plan approval, clarify phase) convert to logged-plan-and-proceed under the same contract.
+- **Every verify/review gate still runs.** The routed skill's implementation, verification, gated reviews, and tests execute exactly as the resolved mode dictates. A headless run that shipped without its gates is a defect, not a feature.
+- Mode-conflict handling: if `mode=fast` collides with a high-risk signal, auto-upgrade to the mode the risk demands and record the decision — don't silently honor the dangerous override, and don't ask.
+
 ---
 
 ## Step 3 — Announce the plan
@@ -88,6 +107,8 @@ Pipeline numbering must match what the routed core skill will actually run at th
 | `balanced` | Print the plan inline, then proceed to Step 4 in the same turn. User can abort with ESC or a new prompt before the routed skill begins. |
 | `fast` | Print the plan inline as a one-line preamble, then execute immediately. No confirm prompt. |
 
+In headless runs the `production` confirm prompt is skipped like the others: print the plan inline, record "proceeded without confirmation (headless)" in the run-state artifact, and continue.
+
 ---
 
 ## Step 4 — Execute via the routed core skill
@@ -96,6 +117,7 @@ Invoke the matching core skill with the **`Skill`** tool. Pass:
 
 - The user's original goal as the body of the prompt
 - `mode=<resolved>`
+- `headless=true` when the run is headless — the routed skill converts its own question points to recorded assumptions
 - Any `include=<csv>` and `skip=<csv>` overrides parsed from the user's prompt
 
 Example invocation for CREATE at production mode:

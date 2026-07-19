@@ -53,6 +53,14 @@ correctness, and get blindly `-u`-updated on failure.
 `it("normalizes slug case")` for a bug that was "returns 404 on uppercase slug" — the name won't tell
 the next reader what regressed. (Mechanical rename → `auto-fixable: false`; it needs domain judgment.)
 
+**Detector F — Defining invariant unasserted (**HIGH**).** Given the feature description/plan the
+parent supplied, extract the 1–3 stated rules/properties that DEFINE the feature ("the frozen plan wins
+over later profile edits", "admission caps re-apply on rerun"). Flag when the tests cover happy path +
+auth/tenancy but assert none of those invariants. Line-coverage is not the signal — the happy-path test
+executes the changed lines without constraining them, so the suite is green while the whole point of
+the feature is unverified. (`auto-fixable: false` — the invariant test must be written against the real
+stated rule.)
+
 ### Step 3 — Return structured report
 
 Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Test-quality findings are almost always `auto-fixable: false` — strengthening an assertion or un-mocking the unit needs to be written against the real behavior, not guessed.

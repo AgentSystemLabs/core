@@ -103,6 +103,8 @@ This gate exists because piling on 20 tests against a misconfigured runner produ
 
 ## Phase 6 — Generate Suite
 
+**REQUIRED first step — enumerate defining invariants BEFORE surface enumeration.** List the 1–3 invariants that DEFINE this feature — the properties a reviewer would call "the whole point" (e.g., "the frozen plan wins over later profile edits", "admission caps re-apply on rerun"). Write one test per invariant first, then enumerate the surface. A suite that covers happy path + auth/tenancy but asserts none of the defining invariants is green-but-empty: the happy-path test executes the changed lines without constraining them.
+
 Before each test, ask: **what is the externally observable contract — return value, DB row, emitted event, HTTP response — that proves this works?** Assert that, not the call sequence.
 
 For each item on the target module's public surface, write:

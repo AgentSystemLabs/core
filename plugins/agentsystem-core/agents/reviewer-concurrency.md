@@ -32,7 +32,7 @@ git diff --cached --name-only 2>/dev/null
 
 Filter to source TS/TSX. Skip tests, fixtures, generated files.
 
-### Step 2 — Run six detectors
+### Step 2 — Run seven detectors
 
 #### Detector A — Webhook handler with no idempotency key check (**HIGH**)
 
@@ -97,6 +97,16 @@ fd -e ts 'jobs?|workers?|queue' <scope>
 ```
 
 For each job: check (a) reads progress from durable state before doing work (so a re-run skips already-done items), AND (b) writes outputs in a way that's safe to repeat (UPSERT, idempotent external calls). If both fail: **HIGH** — a retry corrupts state.
+
+#### Detector G — UI-only guard on a state transition (**HIGH**)
+
+```bash
+rg -n --type ts -e '(status|state|lifecycle|phase)' <scope>
+rg -n --type ts -e '(cancel|rerun|retry|approve|publish|archive|restart|resume|revoke)\w*\(' <scope>
+rg -n --type ts -e 'disabled=\{|hidden=\{|&& <(Button|MenuItem)' <scope>
+```
+
+For each mutation that transitions a lifecycle/status field (cancel, rerun, retry, approve, publish, archive, and kin): verify the **server handler re-checks the precondition** — e.g., only a terminal run may be rerun, only a pending item may be approved — and rejects otherwise (`abort(409)`, throw a conflict error, or equivalent). If the only guard is client-side — a disabled button, conditional render, or hidden menu item — flag **HIGH**. The client guard is a UX hint, not enforcement: a second tab, a stale page, a replayed request, or a direct API call transitions from the wrong state and corrupts the lifecycle. `auto-fixable: false` — the correct precondition and rejection semantics are domain decisions.
 
 ### Step 3 — Return structured report
 
