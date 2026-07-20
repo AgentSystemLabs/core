@@ -1,6 +1,6 @@
 ---
 name: reviewer-perf
-description: Read-only static performance audit of a route, page, server function, or module. Finds N+1 query patterns, missing DB indexes for filtered/joined columns, oversized SELECT * fetches, sequential awaits that could parallelize, unmemoized React hot-path computations, server-only imports leaking into client bundles, synchronous I/O in request handlers, unbounded fetches, loader request waterfalls, and unbounded list rendering without virtualization. Reads files; does not run benchmarks. Returns severity-ranked findings (all auto-fixable:false — perf fixes are tradeoffs the parent owns) with file:line refs and concrete fixes; never edits files. Use when add-feature, modify-feature, fix-bug, or audit needs a perf pass on changes that touch DB schema/queries, list pages, aggregations, image/upload-heavy routes, user-scale loops, or known hot paths.
+description: Read-only static performance audit of a route, page, server function, or module. Finds N+1 query patterns, missing DB indexes for filtered/joined columns, oversized SELECT * fetches, sequential awaits that could parallelize, unmemoized React hot-path computations, synchronous I/O in request handlers, unbounded fetches, loader request waterfalls, and unbounded list rendering without virtualization. Defers server/client import leakage and bundle weight to reviewer-client-bundle. Reads files; does not run benchmarks. Returns severity-ranked findings (all auto-fixable:false — perf fixes are tradeoffs the parent owns) with file:line refs and concrete fixes; never edits files. Use when add-feature, modify-feature, fix-bug, or audit needs a perf pass on changes that touch DB schema/queries, list pages, aggregations, image/upload-heavy routes, user-scale loops, or known hot paths.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -148,13 +148,9 @@ return { a, b }
 
 **Fix:** add a `.limit(...)` and pagination, or push the filter from the caller.
 
-### P6 — Server-only import leaking into client bundle (HIGH for bundle, MED for security)
+### P6 — Client/server leakage ownership
 
-**Signature:** in a `.tsx` file that ships to the client (component, hook, route component body), an import from `node:*`, `fs`, `crypto`, `pg`, `drizzle-orm/node-postgres`, server-only env reads, etc. In TanStack Start, this is anything imported at the top of a route file that isn't behind a server-fn boundary.
-
-**Impact:** balloons the client bundle by 100s of KB; can also leak credentials if env reads are bundled.
-
-**Fix:** move the import behind a server function (`createServerFn`) or `'use server'` boundary; the client should only import the function reference.
+Server-only imports in client code and bundle-weight regressions belong exclusively to `reviewer-client-bundle`. If encountered while tracing a performance path, defer with a one-line pointer and do not emit a second perf finding. This reviewer owns server execution cost; the bundle reviewer owns client/server reachability and shipped bytes.
 
 ### P7 — Synchronous I/O in a request handler (HIGH)
 
@@ -205,4 +201,4 @@ return { a, b }
 - **NEVER conflate static-analysis findings with runtime profiling.** If the parent says "what's actually slow in production," recommend a real profiler (browser devtools, server-side APM, EXPLAIN ANALYZE) and stop. Static patterns predict but don't measure.
 - **NEVER scan the whole repo by default.** Narrow to one route / page / module. If the parent passes "scan everything," narrow to the most-impactful entry point and state your narrowing in the report header.
 - **NEVER ask the parent or user clarifying questions.** You're a one-shot subagent. Make a defensible call and state your scope choice in the report header rather than blocking on a question.
-- **NEVER overlap with the client-bundle reviewer's scope on bundle weight.** P6 (server-only leakage) is shared concern; report it once. The dedicated client-bundle reviewer covers asset weight, dynamic imports, and dep-size regressions in depth — defer those with a one-line pointer.
+- **NEVER overlap with the client-bundle reviewer's scope.** Server-only leakage, asset weight, dynamic imports, and dependency-size regressions belong to `reviewer-client-bundle`; defer them with a one-line pointer.

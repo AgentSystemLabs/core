@@ -28,6 +28,8 @@ This skill accepts a `mode=` argument. Default — when no `mode=` is specified 
 
 **Phase-gated NEVER scope.** When `mode=fast` is in effect, the boundary-confirmation discipline of Phase 1 and the orphan-resweep guarantee of Phase 5 are explicitly suspended for the run — fast mode trades exhaustiveness for speed on obvious deletions. The remaining NEVERs (no string/dynamic-reference miss, no migration history edits, no shared-utility assumption, no scope creep, no public-contract delete, no Phase-6 stub, no mega-commit) stay in force in every mode.
 
+**Run-ledger handoff.** When `/ship` passes `run-id=` and `run-ledger=`, update that ledger at every phase/subagent/reviewer transition. Record scope decisions, reference-map evidence, delete/file ownership, finding dispositions, persisted-data decisions, and exact final verification evidence.
+
 ---
 
 ## Phase 1 — Define the boundary
@@ -128,6 +130,8 @@ If any check fails, the failure points to either (a) a missed reference (go back
 
 Run these **after Phase 5's re-sweep has stabilized the tree** (running reviewers on a tree that still contains orphans produces noise) and before declaring Phase 6 verification complete. Run only the adjuncts whose gates match the deletion. Honor `skip=` from the caller.
 
+For fan-out, follow `add-feature/references/subagent-playbook.md`: classify mandatory/advisory tasks, record base SHA and file ownership, retry failed/malformed output once, execute inline fallback, and block completion when a mandatory gate has no valid report.
+
 - `agentsystem-core:add-migration` — when the removal changes schema, drops/stops-writing columns, removes enum values from persisted rows, changes indexes/constraints, or requires a backfill/purge/historical-data decision.
 - **`reviewer-data-integrity`** subagent (`Agent(subagent_type=reviewer-data-integrity)`) — after any persisted-data, migration, delete cascade, import/export, seed-data, or data-access-invariant change.
 - **`reviewer-security-regression`** subagent (`Agent(subagent_type=reviewer-security-regression)`) — when the deletion removes or reroutes **shared security posture**: auth middleware, rate limiting, a webhook-signature check, input sanitization, CSRF/CORS config, or a permission guard that surviving routes also relied on. A deletion that silently *removes* a control is as dangerous as an addition introducing a hole — and no other routed reviewer covers that class for removals.
@@ -178,3 +182,14 @@ Run these **after Phase 5's re-sweep has stabilized the tree** (running reviewer
 ## Post-step: /simplify
 
 After removal, surrounding code often loses a reason to exist as a separate abstraction (lone-caller helpers, single-branch conditionals, parameters only used by the deleted path). Run `agentsystem-core:simplify` against the diff to collapse the leftovers.
+
+## Final candidate gate — AFTER every mutation
+
+After `simplify`, migrations, reviewer fixes, and docs/changelog updates:
+
+1. Re-run typecheck, lint, full tests, and production build where available.
+2. Repeat the adjacent-feature smoke checks and surviving-coverage check from Phase 6.
+3. Run the canonical residue + hardcoded-secret sweep from `check-pr-readiness` Phase 5 with `include-working-tree`.
+4. If a repair changes code, repeat from step 1.
+
+Report `locally-verified` only when the final tree passes. Otherwise use `partial` or `blocked` with exact evidence.

@@ -74,7 +74,7 @@ Three modes — `fast`, `balanced`, `production`. Pick one before announcing.
 
 **Headless option (`headless=true`).** Also triggered by the word "headless" anywhere in the invocation. Headless removes user interaction, NOT rigor — it skips QUESTIONS, never QUALITY gates:
 
-- **Never call `AskUserQuestion`.** Every point where this skill would ask (intent disambiguation at Step 1, production "Proceed with this pipeline?" at Step 3, the mode-conflict prompt in NEVER) auto-resolves with best judgement instead. **Record each assumption** ("Assumed: EVOLVE over CREATE because the route already exists") in the run-state artifact and surface them all in the Step 5 report.
+- **Never call `AskUserQuestion`.** Every point where this skill would ask (intent disambiguation at Step 1, production "Proceed with this pipeline?" at Step 3, the mode-conflict prompt in NEVER) auto-resolves with best judgement instead. **Record each assumption** ("Assumed: EVOLVE over CREATE because the route already exists") in the per-run ledger and surface them all in the Step 5 report.
 - **Forward `headless=true` to the routed skill** (add-feature / modify-feature / fix-bug / etc.) alongside `mode=`, so its own question points (plan approval, clarify phase) convert to logged-plan-and-proceed under the same contract.
 - **Every verify/review gate still runs.** The routed skill's implementation, verification, gated reviews, and tests execute exactly as the resolved mode dictates. A headless run that shipped without its gates is a defect, not a feature.
 - Mode-conflict handling: if `mode=fast` collides with a high-risk signal, auto-upgrade to the mode the risk demands and record the decision — don't silently honor the dangerous override, and don't ask.
@@ -97,7 +97,9 @@ Pipeline:
 
 Pipeline numbering must match what the routed core skill will actually run at the chosen mode (e.g., `add-feature mode=production` does Clarify → Explore → Design → Plan approval → Implement → Verify → Gated reviews → Tests → Post-steps). Do not invent phases the routed skill won't execute — those become a credibility hole at Step 5.
 
-**Persist the plan (run-state artifact).** A production run spans many phases and subagent fan-outs; on context compaction the announced pipeline is the first thing lost — and Step 5's summary would then be reconstructed from a faded memory. Write the plan block above to a scratch file (`.agentsystem/ship-run.md`, or your session scratch dir if the repo shouldn't be touched) as a checklist, and **check each phase off in that file as the routed skill completes it**. Step 5 reads the completed-phase record from this artifact rather than from memory, so a mid-run compaction can't silently drop a phase (or invent one that didn't run) from the report.
+**Create the per-run ledger.** Read and follow [`references/run-ledger.md`](references/run-ledger.md). Generate a unique run ID and write the ledger under the session scratch directory, falling back to `.agentsystem/runs/<run-id>.md` only when no scratch location exists. Record the goal, intent/mode/risk, base SHA, initial worktree, locked decisions/assumptions, pipeline, and input hash where available.
+
+Update phase/task/reviewer status at every transition. Record file ownership, retries/fallbacks, findings dispositions, exact verification evidence, and terminal state. Never use a fixed `.agentsystem/ship-run.md`: concurrent sessions would overwrite each other. Step 5 reads this ledger rather than reconstructing the run from memory.
 
 **Confirmation gating depends on mode:**
 
@@ -107,7 +109,7 @@ Pipeline numbering must match what the routed core skill will actually run at th
 | `balanced` | Print the plan inline, then proceed to Step 4 in the same turn. User can abort with ESC or a new prompt before the routed skill begins. |
 | `fast` | Print the plan inline as a one-line preamble, then execute immediately. No confirm prompt. |
 
-In headless runs the `production` confirm prompt is skipped like the others: print the plan inline, record "proceeded without confirmation (headless)" in the run-state artifact, and continue.
+In headless runs the `production` confirm prompt is skipped like the others: print the plan inline, record "proceeded without confirmation (headless)" in the run ledger, and continue.
 
 ---
 
@@ -118,12 +120,13 @@ Invoke the matching core skill with the **`Skill`** tool. Pass:
 - The user's original goal as the body of the prompt
 - `mode=<resolved>`
 - `headless=true` when the run is headless — the routed skill converts its own question points to recorded assumptions
+- `run-id=<id>` and `run-ledger=<absolute path>` — the routed skill must update its phase, subagent, reviewer, finding-disposition, and verification records in this ledger
 - Any `include=<csv>` and `skip=<csv>` overrides parsed from the user's prompt
 
 Example invocation for CREATE at production mode:
 
 ```
-Skill(skill="add-feature", args="add stripe webhook handler mode=production")
+Skill(skill="add-feature", args="add stripe webhook handler mode=production run-id=<id> run-ledger=<path>")
 ```
 
 The core skill runs the actual workflow. /ship is a router, not a re-implementation.
@@ -131,7 +134,7 @@ The core skill runs the actual workflow. /ship is a router, not a re-implementat
 **Host-portability fallback.** The `Skill` tool is a Claude Code primitive and may not exist in other agent CLIs (OpenAI Codex, Cursor, Cline, raw API runs, etc.). If `Skill` is not available in the current session:
 
 1. Read the routed skill's SKILL.md directly — for the core skills it's `plugins/agentsystem-core/skills/<skill-name>/SKILL.md` in this repo, or the equivalent path the host loads skills from.
-2. Execute its instructions inline as your next phase of work, passing the same args you would have passed to `Skill(...)`.
+2. Execute its instructions inline as your next phase of work, passing the same args you would have passed to `Skill(...)`, including the run ID and ledger path.
 3. Surface the degradation in the Step 3 announcement: add a line like `Routing:  inline (Skill tool unavailable — no subagent isolation, parent context will carry the routed skill's work)`. The user must know the run isn't isolated.
 
 Inline execution loses subagent context isolation but preserves routing decisions, mode propagation, and downstream audit gates. That is acceptable degradation. Refusing to run because `Skill` is missing is not.
@@ -146,7 +149,7 @@ Inline execution loses subagent context isolation but preserves routing decision
 
 ## Step 5 — Report and hand off to git
 
-After the routed skill returns, output a visible-pipeline summary. **Read the completed-phase record from the Step 3 run-state artifact (`.agentsystem/ship-run.md`)** rather than reconstructing it from memory — the checklist you kept is the authoritative record of what actually ran, especially after a long production run where the early phases have scrolled out of context.
+After the routed skill returns, output a visible-pipeline summary. **Read the completed-phase, reviewer coverage, findings-disposition, verification, and terminal-state records from the Step 3 per-run ledger** rather than reconstructing them from memory. Validate that the ledger's base SHA/input identity still matches this run before trusting it.
 
 ```
 ✔ <phase 1>  — <one-line outcome>
@@ -157,13 +160,25 @@ After the routed skill returns, output a visible-pipeline summary. **Read the co
 Findings:
   - <each finding the routed skill or its sub-skill audits surfaced>
 
-Code is production-ready. To publish:
+Terminal state: <diagnosed | locally-verified | partial | blocked>
+Evidence: <final commands and runtime observation, or the exact missing/failed gate>
+
+When terminal state is locally-verified, to publish:
   • /commit           — group the working tree into staged commits without pushing
   • /commit-and-push  — commit then push the current branch to its remote
   • /open-pr          — open a GitHub PR (commits then pushes if needed)
 ```
 
-Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, duplication) returned issues that the routed skill chose not to auto-fix, name them here so the user sees them before publishing.
+Use exactly one terminal state:
+
+- **`diagnosed`** — root cause or audit findings are established, but no code candidate was produced (including `fix-bug mode=regression` when it stops at root cause).
+- **`locally-verified`** — the routed skill's final post-mutation gate passed and the changed runtime path was observed locally. This does not claim CI, staging, deploy, or production health.
+- **`partial`** — code exists, but a required local command or runtime observation could not be completed. Name the missing evidence.
+- **`blocked`** — a required gate failed, a mandatory reviewer was unavailable with no fallback, or a user decision is required before safe continuation.
+
+Never print publication handoff commands for `diagnosed`, `partial`, or `blocked` as though the candidate were ready.
+
+Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, duplication) returned issues that the routed skill chose not to auto-fix, name them here so the user sees them before publishing. “Production-ready” is not a valid terminal state: this pipeline proves a local candidate, not CI, deployment, rollback, or production health.
 
 **Do not commit. Do not push.** The user picks the publish path.
 
@@ -205,6 +220,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### CREATE → `add-feature` may invoke
 
+- **Adversarial orchestration:** `plan-red-team` before approval for triggered production plans; `findings-reconciler` after 2+ reviewers; `integration-verifier` after all mutations for complex production changes.
 - **UI scaffolding (when feature is user-facing):** `agentsystem-core:add-empty-error-states` (empty + error UI), `agentsystem-core:polish-ui` (post-step UX checklist), `agentsystem-core:propagate-ui-pattern` (when 3+ siblings of a recurring surface exist).
 - **Backend scaffolding (when persisted data or schema changes):** `agentsystem-core:add-migration`, `agentsystem-core:add-observability` (integration-first lane), `agentsystem-core:audit-authz` (when the feature adds or changes server entry points with ownership/permission checks).
 - **Tests (Phase 8):** `agentsystem-core:write-tests` (unit/integration), `agentsystem-core:add-e2e-test` (browser flows when Playwright is wired).
@@ -213,6 +229,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### EVOLVE → `modify-feature` may invoke
 
+- **Adversarial orchestration:** production plan challenge when scope/risk triggers; findings reconciliation after parallel reviews; final integration verification for multi-subsystem/parallel work.
 - **UI extensions:** `agentsystem-core:add-empty-error-states`, `agentsystem-core:polish-ui`.
 - **Backend extensions:** `agentsystem-core:add-migration`, `agentsystem-core:add-observability`, `agentsystem-core:audit-authz` (when the extension touches server entry points with ownership/permission checks).
 - **Tests:** `agentsystem-core:write-tests`, `agentsystem-core:add-e2e-test` when extension warrants browser coverage.
@@ -225,6 +242,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### FIX → `fix-bug` may invoke
 
+- **Adversarial orchestration:** findings reconciliation after parallel post-fix reviews and final integration verification for complex production patches.
 - **Reviewers (gated by the patch surface):** reviewer-contracts, reviewer-authz, reviewer-concurrency, reviewer-data-integrity, reviewer-observability-coverage, reviewer-security-regression, reviewer-error-boundaries.
 - **Backend / domain adjuncts:** `agentsystem-core:add-migration` (corrective migration), `agentsystem-core:add-observability` (missing evidence), `agentsystem-core:realign` (domain-model mismatch).
 - **Regression pinning (balanced + production):** `agentsystem-core:add-regression-test`.
@@ -237,6 +255,6 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### AUDIT → `audit` may invoke
 
-- The reviewer-* subagent fleet across the repo (contracts, data-integrity, error-boundaries, loading-states, observability-coverage, perf, authz, security-regression, concurrency, client-bundle) plus `simplify`, `harden-types`, and `audit-a11y` (whole-app a11y). The per-route `audit-perf` / `audit-responsive` / `audit-seo-meta` / `audit-analytics` skills are **manual entry points**, not part of audit's default battery. See `audit/SKILL.md` for exactly which auditors fire at each mode.
+- The reviewer-* subagent fleet across the repo (contracts, data-integrity, error-boundaries, loading-states, observability-coverage, perf, authz, security-regression, concurrency, client-bundle) plus `simplify`, `harden-types`, and `audit-a11y` (whole-app a11y). When 2+ reviewers run, `findings-reconciler` produces the deduplicated disposition ledger. The per-route `audit-perf` / `audit-responsive` / `audit-seo-meta` / `audit-analytics` skills are **manual entry points**, not part of audit's default battery. See `audit/SKILL.md` for exactly which auditors fire at each mode.
 
 **Course-author note:** because these are gate-driven, a given /ship run will invoke only a subset. The Step 5 pipeline summary names exactly which ones did fire — that's the authoritative record, not this appendix.

@@ -1,6 +1,6 @@
 ---
 name: reviewer-observability-coverage
-description: Read-only audit of observability gaps in changed code. Sibling to add-observability (which actively instruments) — this auditor REPORTS gaps without inserting logs, so the user controls when instrumentation lands. Catches new critical paths with no structured log, errors swallowed without context (bare catch {} or logged without the original error), jobs/webhooks lacking a correlation id propagated through the work, missing latency/failure metrics on hot endpoints, and PII (emails, tokens, raw user content) included in log lines. Detects the project's logger and error reporter so recommendations conform. Returns severity-ranked findings with file:line refs; never edits files and never auto-instruments. Use when add-feature, modify-feature, or fix-bug runs after a change to a critical-path entry point, error path, job, webhook, or external integration.
+description: Read-only audit of observability gaps in changed code. Sibling to add-observability (which actively instruments) — this auditor REPORTS gaps without inserting logs, so the user controls when instrumentation lands. Catches new critical paths with no structured log, errors swallowed without context (bare catch {} or logged without the original error), jobs/webhooks lacking a correlation id propagated through the work, missing latency/failure metrics on hot endpoints, and unnecessary PII (emails, names, addresses, raw user content) in logs. Secret/token exposure is owned by reviewer-security-regression. Detects the project's logger and error reporter so recommendations conform. Returns severity-ranked findings with file:line refs; never edits files and never auto-instruments. Use when add-feature, modify-feature, or fix-bug runs after a change to a critical-path entry point, error path, job, webhook, or external integration.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -76,8 +76,8 @@ rg -n --type ts -e 'console\.\w+\(.*\b(email|password|token|secret|apiKey|ssn|cr
 ```
 
 For each hit, classify the field:
-- Tokens, passwords, secrets → **HIGH**. Never log.
-- Email, full name, address, phone → **HIGH** under privacy regulation; **MEDIUM** otherwise. Recommend hashing or replacing with stable user id.
+- Tokens, passwords, API keys, and secrets belong exclusively to `reviewer-security-regression`; defer with a one-line pointer instead of emitting a duplicate observability finding.
+- Email, full name, address, phone → **HIGH** under privacy regulation; **MEDIUM** otherwise. Recommend hashing or replacing with stable user id. PII minimization and log usefulness remain this reviewer's scope.
 
 Generic names that contain the substring but aren't the sensitive datum (`emailEnabled`, `tokenCount`, `addressBookId`) — manually triage; don't blindly flag.
 

@@ -100,22 +100,18 @@ User-controlled redirect URL with no allowlist: **MEDIUM** open-redirect. `targe
 
 For new public endpoints (no auth, or per-IP-friendly): login, signup, password reset, send-email, send-sms, OTP, share-link, public-form-submit, free-trial-create. If no rate-limit middleware (`express-rate-limit`, `rate-limiter-flexible`, Vercel `unstable_after`/edge limits, custom token bucket) is present in the file or its router: **MEDIUM**.
 
-#### Detector H — LIKE-pattern over-match / untyped query-param shape (**MEDIUM**)
+#### Detector H — LIKE-pattern over-match (**MEDIUM**)
 
 ```bash
 rg -n -e '\bLIKE\b|\bILIKE\b' <scope>
 rg -n --type ts -F 'whereLike' <scope>
 rg -n -e "'%'\s*\.\s*|\.\s*\"%\"|%\$\{" <scope>
 rg -n -e 'whereRaw\([^)]*%' <scope>
-rg -n -e '(query|searchParams|req\.query)\.\w+' <scope>
 ```
 
-Two related gaps:
+Flag user input interpolated into a LIKE/ILIKE pattern without escaping `%`/`_` (and the escape char itself). Bound parameters prevent injection but NOT wildcard over-match — a user searching `100%` matches everything, and a lone `%` search becomes a full-table match. Fix by escaping `%`, `_`, and `\` before wrapping input in wildcards (and declare the `ESCAPE` char where the dialect needs it).
 
-1. **Wildcard over-match.** User input interpolated into a LIKE/ILIKE pattern without escaping `%`/`_` (and the escape char itself). Bound parameters prevent injection but NOT wildcard over-match — a user searching `100%` matches everything, and a lone `%` search becomes a full-table match. Flag each LIKE built from user input with no escaping step; fix is to escape `%`, `_`, and `\` in the input before wrapping it in wildcards (and declare the `ESCAPE` char where the dialect needs it).
-2. **Untyped query-param shape.** Scalar reads of query params that would throw or misbehave on array input (`?status[]=x` turns `req.query.status` into an array — `.toLowerCase()` throws, `whereIn` semantics silently shift). Flag scalar-assumed reads with no shape validation/coercion at the boundary.
-
-Both: **MEDIUM**, `auto-fixable: false` — escaping helpers and param coercion are project-convention decisions.
+Untyped/scalar-assumed query, route-param, and request-body shape belongs exclusively to `reviewer-boundary-validation`; defer it with a one-line pointer rather than emitting a duplicate security finding.
 
 ### Step 3 — Return structured report
 

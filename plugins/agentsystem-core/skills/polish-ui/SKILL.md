@@ -35,6 +35,10 @@ This skill accepts a `mode=` argument (default `balanced`). Callers gate *whethe
 
 **`include=` / `skip=`** accept checklist item numbers (`1`–`5`) and the tokens `siblings` (the `ui-pattern-inspector` pass) and `a11y` / `loading` (the production reviewers). Example: `mode=fast include=siblings`.
 
+**Run-ledger handoff.** When `/ship` passes `run-id=` and `run-ledger=`, update that ledger at every phase/subagent/reviewer transition. Record surface scope, finding dispositions, fixes, exercised interactions, and exact final verification evidence.
+
+For balanced/production subagent fan-out, follow `add-feature/references/subagent-playbook.md`: classify mandatory/advisory tasks, retry failed/malformed output once, use inline fallback, and block a required production pass with no valid report.
+
 ---
 
 ## Checklist
@@ -105,6 +109,10 @@ After fixing, exercise each fixed interaction against the running surface and re
 - Press `Esc` — does it close and return focus (item 2)?
 
 A polish pass that only edits code without exercising it can ship a shortcut label that doesn't fire or a focus trap that never engaged — exactly the "the label is a lie" failure the NEVERs warn about. (Post-step passes inherit the caller's own verification; standalone passes own it.)
+
+## Final candidate gate — standalone runs
+
+For a standalone `/polish-ui` run, finish with a final candidate gate after every fix: run the relevant typecheck/lint/UI tests/build, execute the interaction checklist above, and run the canonical residue + hardcoded-secret sweep from `check-pr-readiness` Phase 5 with `include-working-tree`. If a repair changes code, repeat the gate. Report `locally-verified`, `partial`, or `blocked`; post-step invocations defer this combined-tree terminal state to their caller.
 
 ---
 

@@ -34,6 +34,8 @@ This skill accepts a `mode=` argument. Default — when no `mode=` is specified 
 
 **Version announcement.** At the start of a run (when invoked directly rather than via `/ship`, which announces it upstream), read the plugin version from `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` if that env var exists, else the `.claude-plugin/plugin.json` two directories above this skill file, and include it in the first status line — e.g. "modify-feature (agentsystem-core vX.Y.Z)". If the manifest can't be found, say "version unknown" rather than failing.
 
+**Run-ledger handoff.** When `/ship` passes `run-id=` and `run-ledger=`, update that ledger at every pre-flight, subagent, reviewer, and verification transition. Record finding dispositions plus exact final verification evidence; never create a separate fixed ledger.
+
 **Mode safety override.** If `mode=fast` is requested but the change hits any of the **risk signals** (canonical list in `ship`'s `references/risk-signals.md` — auth/permissions/payments/secrets/webhooks, schema migrations, destructive deletes, background jobs/queues/cron, external APIs, email/SMS/push, imports/exports, file writes, IPC, caching/invalidation, feature flags, analytics, concurrency-sensitive mutations), surface the conflict via `AskUserQuestion` and confirm before honoring. The `/ship` orchestrator enforces this upstream — direct manual callers may not. In headless mode, don't ask — auto-upgrade to the mode the risk signals demand and record the decision as an assumption.
 
 **Phase-gated NEVER scope.** When `mode=fast` is in effect, two NEVERs are explicitly suspended for the run: *"NEVER implement the user's literal proposal without naming one alternative"* and *"NEVER agree with the user's framing of effort before completing Q2"*. The remaining NEVERs (contract audit, peer-data consumers, scope creep, manual-override, stop-action symmetry, rename-realign boundary) stay in force in every mode — they protect against silent breakage that fast mode shouldn't override.
@@ -65,9 +67,13 @@ This skill accepts a `mode=` argument. Default — when no `mode=` is specified 
 
 The same fresh-context subagents `add-feature` uses apply here whenever the extension matches. Dispatch them via the `Agent` tool; they return structured inventories, not advice, and keep search noise out of this window:
 
+For every fan-out, follow `add-feature/references/subagent-playbook.md`: classify mandatory/advisory tasks, record base SHA and file ownership, retry a failed/malformed task once, use the documented inline fallback, and fail closed when a mandatory gate has no valid output.
+
 - **`crud-surface-mapper`** (`Agent(subagent_type=crud-surface-mapper)`) — when the change **adds a field or behavior to an artifact/entity** (Task, Project, User, Workspace, …). It returns every create / edit / settings / bulk-import / duplicate surface for that entity, so the new field ships to *all* of them. This is the concrete guard against the Q2 "shipped to only one surface" failure — the most common incomplete-feature bug.
 - **`ui-pattern-inspector`** (`Agent(subagent_type=ui-pattern-inspector)`) — when the change **adds a new instance of a recurring UI family** (Modal, Dialog, Drawer, Sheet, Form, Card, Toast, Command Palette). It returns 2–3 sibling instances with their conventions (submit/cancel hotkeys, autofocus target, loading/disabled states, footer chrome) to match by default.
 - **`utility-finder`** (`Agent(subagent_type=utility-finder)`) — **before writing any new helper**, to surface an existing equivalent (reuse / extend / write-new verdict with file:line refs) instead of duplicating one that already exists.
+
+In `production`, if the pre-flight finds 5+ affected sites, 3+ subsystems, persistence/public-contract changes, or parallel implementation seams, write the proposed change plan and dispatch **`plan-red-team`** (`Agent(subagent_type=plan-red-team)`) before editing. Reconcile its evidenced amendments against the code, then take any `BLOCKED` decision to the user. If the specialized agent is unavailable, read `agents/plan-red-team.md` and run the same challenge inline; do not silently skip a triggered production gate.
 
 ## Logic-first lane
 
@@ -86,7 +92,7 @@ If the extension touches HTTP/webhook dispatch, queues, jobs, cron, IPC, MCP too
 5. Dispatch the **`reviewer-perf`** subagent (via `Agent(subagent_type=reviewer-perf)`) when the change adds or alters DB queries, list rendering, loops over user-scale data, aggregations, image/upload-heavy routes, or known hot paths. An extension that quietly introduces an N+1 or an unindexed filter otherwise ships with no perf gate — `add-feature` would run one, so an equivalent modify-run must too. Apply auto-fixable items; surface the rest.
 6. Dispatch the **`reviewer-observability-coverage`** subagent (via `Agent(subagent_type=reviewer-observability-coverage)`) after critical-path async/error/integration changes; if it reports missing evidence, invoke `agentsystem-core:add-observability`.
 7. Dispatch the **`reviewer-data-integrity`** subagent (via `Agent(subagent_type=reviewer-data-integrity)`) when the change touches migrations, schema, persistence, imports/exports, deletes, denormalized data, or data-access invariants. The subagent returns a change classification (additive/mutating/destructive) plus severity-ranked findings; apply auto-fixable seed-fixture renames and surface the rest.
-8. Dispatch the **`reviewer-security-regression`** subagent (via the `Agent` tool with `subagent_type=reviewer-security-regression`) when the change touches backend execution, auth, payments, file upload, webhook signing, secrets/env, external APIs, unsafe redirects, or user-rendered HTML. The subagent runs read-only and returns a severity-ranked findings report; apply the `auto-fixable: true` items mechanically and surface the rest to the user. If the change specifically adds or modifies authorization/ownership checks on a server entry point (TanStack server function, route handler, tRPC procedure, GraphQL resolver, webhook handler, queue worker, IPC handler), also dispatch the **`reviewer-authz`** subagent (via `Agent(subagent_type=reviewer-authz)`) — the security-regression auditor covers the broader surface but defers authorization to this auditor. The `agentsystem-core:audit-authz` skill remains available as a manual entry point.
+8. Dispatch the **`reviewer-security-regression`** subagent (via the `Agent` tool with `subagent_type=reviewer-security-regression`) when the change touches backend execution, auth, payments, file upload, webhook signing, secrets/env, external APIs, unsafe redirects, or user-rendered HTML. The subagent runs read-only and returns a severity-ranked findings report; apply the `auto-fixable: true` items mechanically and surface the rest to the user. Dispatch the **`reviewer-authz`** subagent for **every added or changed server entry point** (TanStack server function, route handler, tRPC procedure, GraphQL resolver, webhook handler, queue worker, IPC handler), not only when authorization code is already visible in the diff. The security-regression auditor covers the broader surface but defers authorization to this auditor. The `agentsystem-core:audit-authz` skill remains available as a manual entry point.
 9. Dispatch the **`reviewer-error-boundaries`** subagent (via `Agent(subagent_type=reviewer-error-boundaries)`) when the change alters a user-facing async flow, route loader, form submit, server action surfaced in UI, or background failure path. Apply auto-fixable items; surface the rest.
 10. Dispatch the **`reviewer-loading-states`** subagent (via `Agent(subagent_type=reviewer-loading-states)`) when the change alters async UI (`useQuery`, `useSuspenseQuery`, `useMutation`, optimistic updates, submit pending state, polling, client fetches). Apply auto-fixable items; surface the rest.
 11. Dispatch the **`reviewer-accessibility-regression`** subagent (via `Agent(subagent_type=reviewer-accessibility-regression)`) after interactive UI mutation (buttons, forms, dialogs, focus, custom click targets, error messages). Apply auto-fixable items; surface the rest.
@@ -97,6 +103,8 @@ If the extension touches HTTP/webhook dispatch, queues, jobs, cron, IPC, MCP too
 - **`reviewer-boundary-validation`** (`Agent(subagent_type=reviewer-boundary-validation)`) — when the change adds or alters a server entry point that reads external input (`req.body`/params/query, webhook payload, queue message, IPC arg) with no schema parse. Read-only sibling of `harden-types`; surface HIGH gaps and hand the boundary to `harden-types` to fix.
 - **`reviewer-dependencies`** (`Agent(subagent_type=reviewer-dependencies)`) — when the change touches `package.json`/lockfile or adds a dependency (advisories, install scripts, maintenance/license flags, and a hardcoded-secret sweep of the diff).
 - **`reviewer-test-quality`** (`Agent(subagent_type=reviewer-test-quality)`) — after `write-tests` runs, to gate the generated tests (assert-nothing, mock-the-unit, changed-lines-uncovered) before declaring the change done.
+
+When 2+ reviewers ran, dispatch **`findings-reconciler`** (`Agent(subagent_type=findings-reconciler)`) with every full report, the change plan, final diff, and the run/skip manifest. Fix or obtain user disposition for every surviving finding, rerun the owning reviewer after fixes, and reconcile again before closure. If unavailable, read `agents/findings-reconciler.md` and build the same ledger inline; missing mandatory reports are coverage failures.
 
 ## Stack-conditional adjuncts
 
@@ -150,3 +158,16 @@ After the extension lands, run `agentsystem-core:simplify` against the diff to c
 ## Post-step: /polish-ui (UI changes only)
 
 If the diff touches UI files (`src/components/**`, `src/routes/**`, `src/pages/**`, `app/**` — `.tsx`/`.jsx`), run `agentsystem-core:polish-ui` to verify kbd hints on hotkey-bound buttons, focus management, loading/disabled states, and footer/chrome consistency. Skip when the UI delta is a one-line copy or style tweak.
+
+## Final candidate gate — AFTER every mutation
+
+The earlier verification proves the initial edit, not the candidate after reviewer fixes, generated tests, `simplify`, or `polish-ui`. After all post-steps:
+
+1. Re-run typecheck, lint, the full test suite, and production build where available.
+2. Exercise the changed path again, including every unchanged producer/consumer identified by the contract audit.
+3. Run the canonical residue + hardcoded-secret sweep from `check-pr-readiness` Phase 5 with `include-working-tree`; secret literals and merge markers hard-block completion.
+4. Any code change made to repair this gate invalidates the result; repeat from step 1 and report the real commands/output.
+
+For production work spanning 3+ subsystems, parallel writers, or persistence plus a runtime/client boundary, dispatch **`integration-verifier`** (`Agent(subagent_type=integration-verifier)`) after the combined-tree checks. A failure must be repaired by the parent/owner and rechecked by a fresh verifier. If unavailable, read `agents/integration-verifier.md` and execute its checklist inline.
+
+Use terminal state `locally-verified` only when the combined tree passes. Otherwise report `partial` or `blocked` with the missing/failed evidence.

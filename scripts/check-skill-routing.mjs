@@ -251,6 +251,102 @@ for (const name of coreRoutes) {
   }
 }
 
+// ── Check 11 — reliability-orchestration contracts remain wired ────────────
+const addFeature = byName.get('add-feature');
+if (addFeature) {
+  const requiredMatrixTokens = [
+    '7a, 7b, 7c-7n (gated)',
+    '7e-7g (gated), 7i-7n (gated)',
+    '7a-7n',
+    'authz baseline (gated)',
+    'final-candidate gate',
+  ];
+  for (const token of requiredMatrixTokens) {
+    if (!addFeature.content.includes(token)) {
+      errors.push(`${addFeature.key}: incomplete review/final-gate mode matrix; missing "${token}"`);
+    }
+  }
+}
+
+for (const name of ['add-feature', 'modify-feature', 'fix-bug']) {
+  const skill = byName.get(name);
+  if (!skill) continue;
+  if (!skill.content.includes('Final candidate gate')) {
+    errors.push(`${skill.key}: missing final post-mutation candidate gate`);
+  }
+  if (!skill.content.includes('hardcoded-secret sweep')) {
+    errors.push(`${skill.key}: final gate must run the canonical hardcoded-secret sweep`);
+  }
+}
+
+for (const name of ['remove-feature', 'polish-ui']) {
+  const skill = byName.get(name);
+  if (!skill) continue;
+  if (!skill.content.includes('Final candidate gate')) {
+    errors.push(`${skill.key}: missing final post-mutation candidate gate`);
+  }
+  if (!skill.content.includes('hardcoded-secret sweep')) {
+    errors.push(`${skill.key}: final gate must run the canonical hardcoded-secret sweep`);
+  }
+}
+
+const audit = byName.get('audit');
+if (audit && (
+  !audit.content.includes('Phase 7 — Re-verify and report')
+  || !audit.content.includes('hardcoded-secret sweep')
+)) {
+  errors.push(`${audit.key}: final audit apply gate must reverify and run the secret sweep`);
+}
+
+for (const name of ['add-feature', 'modify-feature', 'fix-bug', 'remove-feature', 'polish-ui', 'audit']) {
+  const skill = byName.get(name);
+  if (!skill) continue;
+  if (!skill.content.includes('run-id=') || !skill.content.includes('run-ledger=')) {
+    errors.push(`${skill.key}: must accept and update the /ship run ledger`);
+  }
+}
+
+const reliabilityAgents = {
+  'plan-red-team': ['add-feature', 'modify-feature'],
+  'findings-reconciler': ['add-feature', 'modify-feature', 'fix-bug', 'audit'],
+  'integration-verifier': ['add-feature', 'modify-feature', 'fix-bug'],
+};
+for (const [agentName, callers] of Object.entries(reliabilityAgents)) {
+  if (!agentNames.has(agentName)) {
+    errors.push(`missing reliability agent "${agentName}"`);
+    continue;
+  }
+  for (const callerName of callers) {
+    const caller = byName.get(callerName);
+    if (!caller?.content.includes(`subagent_type=${agentName}`)) {
+      errors.push(`${caller?.key ?? callerName}: must dispatch ${agentName}`);
+    }
+    if (!caller?.content.includes(`agents/${agentName}.md`)) {
+      errors.push(`${caller?.key ?? callerName}: must define inline fallback for ${agentName}`);
+    }
+  }
+}
+
+const ship = byName.get('ship');
+if (ship) {
+  for (const token of [
+    'references/run-ledger.md',
+    'run-id=<id>',
+    'run-ledger=<absolute path>',
+    'diagnosed',
+    'locally-verified',
+    'partial',
+    'blocked',
+  ]) {
+    if (!ship.content.includes(token)) {
+      errors.push(`${ship.key}: missing run-ledger/terminal-state token "${token}"`);
+    }
+  }
+  if (ship.content.includes('Code is production-ready')) {
+    errors.push(`${ship.key}: must not claim an unconditional production-ready terminal state`);
+  }
+}
+
 if (errors.length > 0) {
   console.error('Skill routing drift detected:');
   for (const item of errors) console.error(`- ${item}`);

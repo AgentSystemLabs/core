@@ -44,7 +44,7 @@ flowchart TD
     BAL --> S3
     OVR --> S3
 
-    S3[/"Step 3: Announce plan<br/>(Detected / Risk / Mode / Pipeline)"/]
+    S3[/"Step 3: Announce plan + create unique run ledger<br/>(Detected / Risk / Mode / Pipeline)"/]
     S3 -->|"production: AskUserQuestion 'Proceed?'"| GATE{Approved?}
     S3 -->|"balanced: print + proceed"| S4
     S3 -->|"fast: one-line preamble + go"| S4
@@ -66,8 +66,10 @@ flowchart TD
     R7 --> S5
     R8 --> S5
 
-    S5[/"Step 5: Pipeline summary + Findings<br/>NEVER commits, pushes, or opens PRs"/]
-    S5 --> HANDOFF[["Hand off to user:<br/>/commit · /commit-and-push · /open-pr"]]
+    S5[/"Step 5: Pipeline summary + findings + evidence<br/>NEVER commits, pushes, or opens PRs"/]
+    S5 --> STATE{"Terminal state"}
+    STATE -->|"locally-verified"| HANDOFF[["Hand off to user:<br/>/commit · /commit-and-push · /open-pr"]]
+    STATE -->|"diagnosed / partial / blocked"| STOP2([Stop with evidence or blocker])
 ```
 
 **Teaching points**
@@ -77,6 +79,35 @@ flowchart TD
 - One core skill per `/ship` run. Multi-intent prompts (`add X and remove Y`) are run as **sequential** `/ship` invocations.
 - `/ship` never commits — Step 5 always hands off to a separate publish skill.
 - Cosmetic single-element tweaks route to EVOLVE with `mode=fast` (via `modify-feature`), not a dedicated tweak intent.
+- The per-run ledger records base SHA, locked decisions, task/reviewer status, findings disposition, retries, and final evidence; a fixed shared scratch filename is not used.
+- “Production-ready” is not a terminal state. `locally-verified` proves the final local candidate only; CI/deploy health belongs to later workflows.
+
+### Adaptive adversarial spine
+
+The reliability roles are gated additions to the existing pipeline, not a second Fleet orchestrator:
+
+```mermaid
+flowchart LR
+    Explore[Explore existing code] --> Design[Design plan]
+    Design --> PlanGate{"Production risk or 3+ subsystems?"}
+    PlanGate -->|yes| RedTeam[plan-red-team]
+    PlanGate -->|no| Approval[User approval when mode requires]
+    RedTeam --> Approval
+    Approval --> Build[Serial or territory-safe implementation]
+    Build --> Reviews[Triggered specialist reviewers]
+    Reviews --> ReviewCount{"Two or more reviewers?"}
+    ReviewCount -->|yes| Reconcile[findings-reconciler]
+    ReviewCount -->|no| Fixes[Resolve findings]
+    Reconcile --> Fixes
+    Fixes --> PostSteps[Tests, simplify, polish, instrumentation]
+    PostSteps --> CombinedGate[Final combined-tree gate]
+    CombinedGate --> VerifyGate{"Complex production change?"}
+    VerifyGate -->|yes| Independent[integration-verifier]
+    VerifyGate -->|no| Outcome[Terminal state]
+    Independent --> Outcome
+```
+
+All three roles are read-only. If a required specialized agent is unavailable, the parent reads its agent contract and performs the same checklist inline; a missing mandatory gate blocks local verification.
 
 ---
 

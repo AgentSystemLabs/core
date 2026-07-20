@@ -18,6 +18,13 @@ Common good fits:
 - **Reviews:** code review + security review + performance review on a finished diff.
 - **Independent implementation:** a new DB migration AND an unrelated UI component AND a new doc snippet.
 
+## Research waves
+
+- Launch at most **four** research agents in the first wave, each with a disjoint lens and explicit non-goals. Agent count follows unknowns, not project importance.
+- Give every researcher the same base SHA and locked user decisions. Require `file:line`, confidence, assumptions, and unresolved questions.
+- A second wave is conditional: launch only for named gaps, contradictions, or a subsystem the first wave proved relevant. Each second-wave prompt must include the prior reports and state what it extends or challenges.
+- If four lenses cannot cover the unknowns, serialize additional waves. A ten-agent first wave creates synthesis noise, not breadth.
+
 ---
 
 ## When NOT to fan out
@@ -53,12 +60,30 @@ Report format:
 Implement [specific scoped piece]. Do NOT touch anything outside the listed files.
 
 Context: [feature one-liner]
+Run ID / base SHA: [stable identifiers]
 Files you may create/edit: [explicit list]
+Generated/lock/config files you own: [explicit list or none]
 Files you must NOT edit: [adjacent areas owned by other agents]
 Contract: [exact signatures, types, or response shapes — frozen]
+Stable anchors: [symbols/routes/tables — line numbers are evidence only]
 Constraints: [project conventions to follow]
 Done when: [specific exit condition]
 ```
+
+## Parallel implementation contract
+
+Before launching writers, the parent freezes shared schemas, types, route/queue payloads, and public signatures in the run ledger. If a writer discovers that contract is wrong, it stops and reports; it does not silently redesign.
+
+For each batch:
+
+1. **One writer per file.** Every source, generated, snapshot, lockfile, formatter-owned config, and migration file has exactly one owner. Two items that share a file run in different batches.
+2. **Base revision is explicit.** Every prompt carries the same base SHA and stable symbol anchors. Exact line numbers may drift and are never the sole edit target.
+3. **Territory is enforced after return.** Capture changed paths before launch; after each writer returns, compare its changed paths to its allowlist. An undeclared path is a failed task until the parent inspects it.
+4. **Shared checkout commands are serialized.** Writers may run targeted read-only checks for their territory. Full tests, builds, formatters, codegen, migrations, snapshot updates, and commands that share ports/caches/test databases run once by the parent after the batch—not concurrently.
+5. **No implicit generated output.** If a command can rewrite routes, clients, schemas, snapshots, or lockfiles, those outputs must be owned by one writer or generated serially by the parent.
+6. **Batch gate before dependency advance.** The parent checks the combined tree and frozen contracts before starting a dependent batch.
+
+Prefer isolated worktrees when the host can create and deterministically merge them. File territories reduce collisions; they do not make a shared mutable checkout isolated.
 
 ## Briefing template (Review agents)
 
@@ -77,3 +102,36 @@ Do NOT fix anything — report only.
 ## After fan-out
 
 Consolidate. Read every agent's report. Resolve contradictions explicitly — don't average them. If two reviews disagree, decide which is right and why.
+
+The parent and user retain decision authority. Researchers propose, plan-red-team challenges, implementers execute, and reviewers verify; none may silently choose product behavior, compatibility policy, or accepted risk.
+
+## Task failure policy
+
+Classify each dispatch before launch:
+
+- **Mandatory** — plan-red-team when its production trigger fires, always-on correctness review, triggered authz/contract/data-integrity gates, findings reconciliation, and integration verification. Failure blocks `locally-verified`.
+- **Advisory** — optional discovery or polish whose absence does not invalidate a required safety claim. Failure is reported and may continue with warning.
+
+For timeout, tool error, malformed output, missing evidence, or agent unavailability:
+
+1. Record `FAILED` plus reason in the run ledger.
+2. Retry once with a narrower prompt and the same base SHA/locked decisions.
+3. If the retry fails, execute the documented inline fallback.
+4. If a mandatory task has no successful report/fallback, stop with terminal state `blocked`.
+5. If advisory, continue only after recording the uncovered lens and terminal warning.
+
+Never treat a zero-length or malformed report as “no findings.” Never relaunch a writer blindly after partial edits: inspect its changed paths first, then either keep and reassign from the current tree or revert only with explicit user approval.
+
+## Minimum task record
+
+Every dispatch records:
+
+- task ID, role, mandatory/advisory
+- base SHA and input artifact paths/hashes
+- locked decisions and file territory
+- status: `PENDING | RUNNING | PASSED | FAILED | FALLBACK | CANCELLED`
+- retry count and failure reason
+- output location/summary
+- verification/disposition owner
+
+This record belongs in the `/ship` run ledger, not only in conversation context.

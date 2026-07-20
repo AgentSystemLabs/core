@@ -20,9 +20,9 @@ This skill accepts a `mode=` argument that controls depth of execution. Default 
 
 | Mode | Phases that run | Phases skipped |
 |---|---|---|
-| `production` (default) | 1, 2, 3, 4, 5, 6, 7a, 7b, 7c-7h (gated), 8, post-steps | none — full pipeline |
-| `balanced` | 1, 2, 3, 5, 6, 7a, 7b, 7e (gated), 7f (gated), 7g (gated), 8 (conditional), post-steps | 4 (Plan-gate), 7c (Security), 7d (Perf), 7h (Data Integrity) unless explicitly included |
-| `fast` | 5, 6 | 1, 2, 3, 4, 7a-7h, 8, post-steps |
+| `production` (default) | 1, 2, 3, 4, 5, 6, 7a, 7b, 7c-7n (gated), authz baseline (gated), 8, post-steps, final-candidate gate | none — full pipeline |
+| `balanced` | 1, 2, 3, 5, 6, 7a, 7b, 7e-7g (gated), 7i-7n (gated), authz baseline (gated), 8 (conditional), post-steps, final-candidate gate | 4 (Plan-gate), 7c broad security (authz baseline still runs), 7d (Perf), 7h (Data Integrity) unless explicitly included |
+| `fast` | 5, 6, final-candidate gate | 1, 2, 3, 4, 7a-7n, authz baseline, 8, post-steps |
 
 **`include=` / `skip=` overrides.** Add or remove specific phases on top of the mode default — `mode=fast include=8` runs implement + verify + tests; `mode=production skip=7c` skips the security review even when the gate would have triggered. `include=` wins over the mode default; `skip=` wins over both. **Token set:** phase numbers `1`–`8`, review-gate ids `7a`–`7n`, and the lane tokens `logic-first` and `tests`.
 
@@ -40,6 +40,8 @@ This skill accepts a `mode=` argument that controls depth of execution. Default 
 - The final report must include the full plan and every recorded assumption so the user can audit the run after the fact.
 
 **Version announcement.** At the start of a run (when invoked directly rather than via `/ship`, which announces it upstream), read the plugin version from `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` if that env var exists, else the `.claude-plugin/plugin.json` two directories above this skill file, and include it in the first status line — e.g. "add-feature (agentsystem-core vX.Y.Z)". If the manifest can't be found, say "version unknown" rather than failing.
+
+**Run-ledger handoff.** When `/ship` passes `run-id=` and `run-ledger=`, update that ledger at every phase/subagent/reviewer transition and record finding dispositions plus exact final verification evidence. Direct invocation without those args may use conversation state; never create a competing fixed ledger path.
 
 **Mode safety override.** If `mode=fast` is requested for work that hits any of the **risk signals** — the canonical list lives in `ship`'s `references/risk-signals.md` (auth/permissions/payments/secrets/webhooks, schema migrations or persisted-data rewrites, destructive deletes of external contracts, background jobs/queues/cron/email/SMS/imports/exports/file-writes/IPC/external APIs, caching/invalidation/flags/analytics/concurrency-sensitive mutations, or multi-subsystem changes) — pause and surface the conflict via `AskUserQuestion`: *"Detected high-risk signals. You requested fast mode — that skips clarify, plan, reviews, and tests. Confirm fast anyway, or upgrade to production?"* The `/ship` orchestrator enforces this upstream, but direct manual callers may not — don't silently honor a dangerous override. In headless mode, don't ask — auto-upgrade to the mode the risk signals demand and record the decision as an assumption.
 
@@ -130,6 +132,14 @@ Produce a plan covering:
 
 Keep it lean — bullet points over prose. The plan exists to be reviewed, not to be archived.
 
+### Adversarial plan challenge — GATED
+
+Before Phase 4, dispatch **`plan-red-team`** (`Agent(subagent_type=plan-red-team)`) when mode is `production` and the plan is high-risk, spans 3+ subsystems, changes persistence/public contracts, or supports parallel implementation. Give it the proposed plan, defining invariants, exploration evidence, locked user decisions, non-goals, and base SHA.
+
+Apply evidenced `AMEND` results to the plan, remove `KILL` items, merge duplicates, and surface every `BLOCKED` decision to the user. The parent—not the subagent—reconciles verdicts against code and user intent. Present the resulting plan, including what changed under challenge, at Phase 4.
+
+**Host fallback:** if the specialized agent is unavailable, read `agents/plan-red-team.md` and execute its review inline before approval. This is a mandatory production gate when triggered; agent unavailability is not a reason to skip it.
+
 ---
 
 ## Phase 4 — Plan Approval Gate (MANDATORY)
@@ -179,6 +189,8 @@ Run reviews **on the diff you just produced**. Each review is gated by what the 
 
 Subagent fan-out is encouraged here: dispatch the applicable reviews in parallel as separate agents, then consolidate findings.
 
+**Authorization baseline (independent of 7c).** In `balanced` and `production`, dispatch `reviewer-authz` for every added or changed server entry point. This gate does not depend on recognizing auth code in the diff and is not skipped when balanced mode skips the broader 7c security review.
+
 ### 7a. Code Review — ALWAYS
 Dispatch the **`reviewer-code`** subagent (via `Agent(subagent_type=reviewer-code)`) with the diff and the approved Phase 4 plan. It carries [`references/code-review-checklist.md`](references/code-review-checklist.md) and reviews in a **fresh context** — a self-review by the same agent that wrote the code inherits the author's blind spots, which is the whole reason 7a exists. Apply the `auto-fixable: true` items; surface the rest. (Host-portability fallback: if the `Agent` tool is unavailable, read `references/code-review-checklist.md` and apply it to the diff inline.)
 
@@ -189,7 +201,7 @@ Run `agentsystem-core:simplify` against the diff when it is non-trivial to surfa
 **Run only if the diff changed backend logic** (server routes, server actions, auth, authz, query construction, file I/O on server, env/secret usage, deserialization, IPC handlers, anything executed outside the user's browser).
 
 If gate triggers → read [`references/security-review-checklist.md`](references/security-review-checklist.md) and apply.
-Also dispatch the **`reviewer-security-regression`** subagent (via the `Agent` tool with `subagent_type=reviewer-security-regression`) when the backend change touches auth, payments, file upload, webhook signing, secrets/env, external APIs, unsafe redirects, or user-rendered HTML. The subagent runs read-only and returns a severity-ranked findings report; apply the `auto-fixable: true` items mechanically and surface the rest to the user. If the security concern is specifically authorization/ownership across server entry points, dispatch the **`reviewer-authz`** subagent (via `Agent(subagent_type=reviewer-authz)`) — it returns severity-ranked findings (critical/high/medium/low) with concrete fix snippets using the project's existing auth helpers. The `agentsystem-core:audit-authz` skill remains available as a manual entry point.
+Also dispatch the **`reviewer-security-regression`** subagent (via the `Agent` tool with `subagent_type=reviewer-security-regression`) when the backend change touches auth, payments, file upload, webhook signing, secrets/env, external APIs, unsafe redirects, or user-rendered HTML. The subagent runs read-only and returns a severity-ranked findings report; apply the `auto-fixable: true` items mechanically and surface the rest to the user. Dispatch the **`reviewer-authz`** subagent for **every added or changed server entry point** (server function, route handler, tRPC/GraphQL procedure, webhook, queue worker, IPC handler), even when the endpoint appears intentionally public. The reviewer decides whether public access is deliberate and catches the missing-auth case that a trigger based on already-recognized auth code would miss. It returns severity-ranked findings with concrete fix snippets using the project's existing auth helpers. The `agentsystem-core:audit-authz` skill remains available as a manual entry point.
 **Do NOT load** `security-review-checklist.md` if the diff is purely client-side rendering / styling / static config / docs — skip and say so.
 
 ### 7d. Performance Review — GATED
@@ -233,6 +245,11 @@ Dispatch the **`reviewer-dependencies`** subagent (via `Agent(subagent_type=revi
 
 ### Resolving review conflicts
 If two review subagents contradict each other (e.g., one flags a query as N+1, another says it's fine), pick one and document why. Do not average — one is right and one is wrong. Read both findings against the actual code and decide.
+
+### Findings reconciliation
+When 2+ reviewer agents ran, dispatch **`findings-reconciler`** (`Agent(subagent_type=findings-reconciler)`) with the complete reports, approved plan, final diff, and a manifest of expected/run/skipped reviewers with trigger reasons. Use its ledger as the review exit gate: duplicates merge, conflicting fixes are resolved against code, and every surviving item receives a disposition.
+
+After fixes, rerun the owning reviewer (or the final integration verifier) and reconcile again before marking an item closed. **Host fallback:** if the agent is unavailable, read `agents/findings-reconciler.md` and perform the same ledger inline. A malformed/missing mandatory report is a coverage failure, not a clean scan.
 
 ### Review exit gate
 Every finding must be either fixed or explicitly acknowledged with the user before continuing. Do not silently defer issues.
@@ -319,3 +336,16 @@ After implementation lands and tests pass, run `agentsystem-core:simplify` again
 ## Post-step: /polish-ui (UI changes only)
 
 If the diff touches UI files (`src/components/**`, `src/routes/**`, `src/pages/**`, `app/**` — `.tsx`/`.jsx`), run `agentsystem-core:polish-ui` to verify kbd hints on hotkey-bound buttons, focus management, loading/disabled states, and footer/chrome consistency. Skip when the UI delta is a one-line copy or style tweak.
+
+## Final candidate gate — AFTER every mutation
+
+`simplify`, `polish-ui`, reviewer auto-fixes, observability instrumentation, and test-strengthening all mutate the candidate after Phase 6. The run is not complete until the **final combined tree** passes:
+
+1. Re-run the project typecheck, linter, full test suite, and production build (all commands the project exposes).
+2. Re-run the actual changed code path from Phase 6; for shared components/types, exercise every consumer identified by the contract review.
+3. Run the canonical residue + hardcoded-secret sweep from `check-pr-readiness` Phase 5 with `include-working-tree`, covering tracked, staged, and untracked added lines. Secret literals and merge markers are hard blockers.
+4. If any final-gate fix changes code, repeat this gate from step 1. A fix is not allowed to certify itself.
+
+For `production` work that spans 3+ subsystems, used parallel writers, or changed persistence plus a runtime/client boundary, dispatch **`integration-verifier`** (`Agent(subagent_type=integration-verifier)`) after steps 1–4. A `FAIL` returns the work to the owning implementation step; after repair, launch a fresh verifier pass. **Host fallback:** read `agents/integration-verifier.md` and run its full checklist inline. The verifier is mandatory when triggered and never fixes its own findings.
+
+Report the exact commands and observed result. If any command cannot run, classify the outcome as `partial` or `blocked`; never round it up to locally verified.

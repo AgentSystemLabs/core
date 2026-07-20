@@ -64,7 +64,9 @@ rg -n --type ts -F '<form ' <scope>
 rg -n --type ts -F 'onSubmit' <scope>
 ```
 
-If a guard like `disabled={isPending && !isError}` is missing so a failed submit locks the button forever, OR the button re-enables into a non-idempotent retry (double-submit on failure): **MEDIUM**, `auto-fixable: false` — the semantics are subtle (retry-friendly vs. rate-limited vs. terminal "show contact support" all look similar), so the parent decides.
+Flag a disabled expression that remains true after the mutation enters error state (for example `disabled={isPending || isError}`) **when no reset/retry/recovery action exists**: the form is permanently locked after failure. This is **MEDIUM**, `auto-fixable: false` because the correct recovery may be reset, retry, edit-and-resubmit, or a terminal support path.
+
+Whether a re-enabled retry is idempotent belongs exclusively to `reviewer-concurrency`; defer it with a one-line pointer instead of duplicating that finding here.
 
 #### Detector D — Server error becomes a generic toast with no retry path (**MEDIUM**)
 
@@ -103,9 +105,10 @@ Reply with ONLY a findings report in the shared markdown format from [`../findin
    - auto-fixable: false
 
 ### MEDIUM — <count>
-3. **Submit button missing `disabled={isPending}`** — `<form-file>:<line>`
-   - Fix: add `disabled={isPending}` (mutation variable: `<varName>`).
-   - auto-fixable: true
+3. **Failed submit leaves form permanently disabled** — `<form-file>:<line>`
+   - `disabled={isPending || isError}` remains true after failure and no reset/retry action clears the error.
+   - Fix: add the project-conventional reset/retry recovery and return focus to the failed field or error summary.
+   - auto-fixable: false
 
 4. **Generic error toast with no retry path** — `<file>:<line>`
    - "Something went wrong" with no refetch / retry button.

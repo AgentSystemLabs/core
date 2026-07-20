@@ -41,6 +41,8 @@ This skill accepts a `mode=` argument. Default — when no `mode=` is specified 
 
 **Phase-gated NEVER scope.** When `mode=fast` is in effect, *"NEVER list hypotheses without first stating the runtime contract"* is suspended for that run — fast mode explicitly opts out of the contract-first structure. The remaining NEVERs (no overconfident assertion, no parallel-hypothesis test asks, no theorizing past pasted evidence, no ignoring silent-failure patterns, no assuming the running process has latest code) stay in force in every mode.
 
+**Run-ledger handoff.** When `/ship` passes `run-id=` and `run-ledger=`, update that ledger at every phase/subagent/reviewer transition. Record trace evidence, diagnostics, patch tasks, finding dispositions, retries/fallbacks, and exact final verification evidence. Never create a competing fixed ledger path.
+
 ---
 
 ## Workflow
@@ -145,9 +147,11 @@ State the evidence in the report — "verified: the webhook now hits `handler.ts
 
 After Step 8 confirms the fix, run only the adjuncts whose gates match the patch. Honor `skip=` from the caller.
 
+For reviewer fan-out, follow `add-feature/references/subagent-playbook.md`: record mandatory/advisory status and base SHA, retry failed/malformed output once, execute inline fallback, and block completion when a mandatory gate has no valid report.
+
 - **`reviewer-code`** subagent (`Agent(subagent_type=reviewer-code)`) — a fresh-context correctness review of the fix diff (did it actually address the root cause? did it introduce a new edge case or plan-drift?). Run for any non-trivial fix; skip only for a one-line or obviously-correct patch. Apply auto-fixable items; surface the rest.
 - **`reviewer-contracts`** subagent (`Agent(subagent_type=reviewer-contracts)`) — when the patch changes a client/server, route/schema, IPC, DTO, generated-client, server-function, OpenAPI, tRPC, or API boundary.
-- **`reviewer-authz`** subagent (`Agent(subagent_type=reviewer-authz)`) — when the patch touches a server entry point's ownership or access check (the fix added or changed a `requireUser`/ownership lookup, or the reported bug was "one user could see or act on another user's data"). Missing-auth/IDOR is the highest-severity class a fix can accidentally introduce or leave in place; `reviewer-security-regression` explicitly defers authorization, so it must be dispatched separately.
+- **`reviewer-authz`** subagent (`Agent(subagent_type=reviewer-authz)`) — for every added or changed server entry point in the patch, even when no access check is present in the diff. Missing-auth/IDOR is the highest-severity class a fix can accidentally introduce or leave in place; `reviewer-security-regression` explicitly defers authorization, so it must be dispatched separately.
 - **`reviewer-concurrency`** subagent (`Agent(subagent_type=reviewer-concurrency)`) — when the patch touches mutations, jobs, webhooks, retries, idempotency, transactions, async UI writes, polling, or stale async responses.
 - **`reviewer-data-integrity`** subagent (`Agent(subagent_type=reviewer-data-integrity)`) — when the fix changes persistence logic (writes, deletes, backfills, uniqueness assumptions, or read-modify-write on stored rows), **even without a migration**. A persistence-logic fix that passes locally on an empty table can still corrupt existing production rows.
 - **`reviewer-boundary-validation`** subagent (`Agent(subagent_type=reviewer-boundary-validation)`) — when the fix adds or changes a server entry point that reads external input (`req.body`/params, webhook payload, queue message, IPC arg) and the bug involved a malformed/unexpected value. Reports boundaries with no schema parse; hand HIGH gaps to `agentsystem-core:harden-types` to fix.
@@ -158,6 +162,8 @@ After Step 8 confirms the fix, run only the adjuncts whose gates match the patch
 - `agentsystem-core:realign` — when the root cause is not a local bug but a domain-model mismatch: enum/state/vocabulary drift, persisted status value mismatch, lifecycle-state rename, or a state machine whose code and business meaning diverged.
 
 In `balanced` and `production`, invoke `agentsystem-core:add-regression-test` to pin the fix unless explicitly skipped (`fast` pins only with `include=regression-test`) — its own description says to run it automatically after any code fix, and Step 8's repro is usually a ready-made red/green test. If the patch touched UI files, run `agentsystem-core:polish-ui` after the checks above unless the UI delta is copy-only.
+
+When 2+ reviewer agents ran, dispatch **`findings-reconciler`** (`Agent(subagent_type=findings-reconciler)`) with every full report, the root-cause statement, patch diff, and reviewer run/skip manifest. Fix or obtain user disposition for every surviving item, rerun the owning reviewer after repairs, then reconcile again. If the specialized agent is unavailable, read `agents/findings-reconciler.md` and create the same ledger inline; a missing mandatory report is a coverage failure.
 
 ---
 
@@ -236,3 +242,16 @@ Before sending the first message, ask: **"If the user reads only this message an
 ## Post-step: /simplify
 
 Once the bug is fixed and verified, run `agentsystem-core:simplify` on the diff to clean up any duplication, magic numbers, or quick-fix shortcuts the patch introduced — without changing behavior.
+
+## Final candidate gate — AFTER every mutation
+
+Step 8 verifies the root-cause patch before adjuncts. Reviewer fixes, migrations, observability, regression tests, `polish-ui`, and `simplify` can all change the candidate afterward. Before reporting completion:
+
+1. Re-run typecheck, lint, the full test suite, and production build where available.
+2. Re-run the original Step 4 diagnostic/reproduction and observe the previously broken link succeed.
+3. Run the canonical residue + hardcoded-secret sweep from `check-pr-readiness` Phase 5 with `include-working-tree`; secret literals and merge markers are hard blockers.
+4. If a repair changes code, repeat the gate from step 1. Do not let a fix certify itself.
+
+For a production fix that spans 3+ subsystems, changes persistence plus a runtime/client boundary, or used parallel writers, dispatch **`integration-verifier`** (`Agent(subagent_type=integration-verifier)`) after the combined-tree checks. Give it the root-cause contract, regression invariant, final diff, reconciled ledger, commands, and runtime diagnostic. A `FAIL` is repaired by the parent and checked by a fresh verifier. If unavailable, read `agents/integration-verifier.md` and run its checklist inline.
+
+Report `locally-verified` only with observed runtime evidence and green combined-tree gates. Use `diagnosed` when no patch was requested/applied, `partial` when evidence could not be collected, and `blocked` when a required gate failed.

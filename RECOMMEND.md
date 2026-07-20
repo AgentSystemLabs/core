@@ -1,4 +1,38 @@
-# Recommended Handoff Skills
+# Reliability Recommendations
+
+The specialist reviewer fleet and its shared findings contract have shipped. Core now also
+contains the high-leverage orchestration controls extracted from the Fleet experiment without
+adding Fleet as a competing top-level workflow:
+
+- `plan-red-team` challenges risky multi-subsystem plans before approval.
+- `findings-reconciler` deduplicates parallel reports, resolves conflicts, records reviewer
+  coverage, and tracks finding disposition.
+- `integration-verifier` independently attacks final combined-tree seams after all mutations.
+- `/ship` uses a unique resumable run ledger and honest terminal states.
+- CREATE/EVOLVE/FIX run a final candidate gate after cleanup, generated tests, instrumentation,
+  UI polish, and reviewer fixes.
+- Parallel fan-out has a base-SHA, frozen-contract, one-writer-per-file, retry/fallback, and
+  fail-closed mandatory-task contract.
+
+These roles are gated by risk and complexity. They do not run as a fixed six-to-eight-agent tax on
+ordinary prompts.
+
+## Remaining opportunities
+
+1. Machine-evaluated orchestration fixtures for gate selection and terminal outcomes.
+2. Worktree-backed writer isolation and deterministic merges.
+3. Flake detection and selective mutation testing for high-risk domains.
+4. A separate CI/deploy workflow; `locally-verified` intentionally does not claim production health.
+5. Stronger least-privilege enforcement as each supported harness exposes capability controls.
+
+Do not import the global Fleet skill wholesale. Its generic research/spec/backlog/implementer chain
+duplicates Core’s intent-aware workflows and specialist reviewers, while shared-checkout parallel
+builders add race risk.
+
+## Historical shipped backlog
+
+The material below records earlier recommendations that have already shipped and remains for audit
+history.
 
 This repo has a mature handoff spine. The reviewer fleet proposed in earlier drafts of this
 file has **shipped** — every `code-check-*` proposal is now a read-only `reviewer-*` subagent:
@@ -10,8 +44,8 @@ file has **shipped** — every `code-check-*` proposal is now a read-only `revie
 - `check-release-risk` shipped as the pre-publish risk briefing feeding
   `/commit-and-push`, `/open-pr`, and `/release`.
 
-This file now tracks the **remaining** gaps — the reviewers and nets that the current
-pipeline still doesn't cover. See `PLAN.md` Workstream 5 for the full rationale.
+The sections below are the historical rationale for capabilities that are now present. See
+`PLAN.md` Workstream 5 for the original audit context.
 
 ## Top Priorities
 

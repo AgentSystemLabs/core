@@ -48,7 +48,7 @@ For each changed file, classify what kind of producer it contains:
 
 For each producer found, capture **before** and **after** shape from `git diff`. The diff is the contract change.
 
-### Step 3 — Run five detectors
+### Step 3 — Run six detectors
 
 #### Detector A — Field rename / removal in returned DTO (**HIGH**)
 
@@ -112,6 +112,22 @@ rg -n --type ts -F '<newField>' <repo>                 # who already supplies it
 
 Enumerate EVERY consumer/mounting site of the shared component and every producer that supplies its props or constructs that type — Inertia `render(...)` props, route loaders, resolvers, serializers, factories — **explicitly including files OUTSIDE the diff**. Flag each producer that does not supply the new field. TypeScript passing is not evidence here: a non-optional TS field on Inertia/loader props is an unenforced claim about producers — the compiler never sees the PHP/server side that builds the props, so the page breaks at runtime on every unchanged mounting site. `auto-fixable: false` — each missing producer needs a domain decision about what value to supply.
 
+#### Detector F — Rolling-deploy and version-coexistence drift (**HIGH–MEDIUM**)
+
+Trigger when the diff changes a persisted schema, public/request/response DTO, queue/event payload, webhook contract, generated client, feature-flagged behavior, or worker-consumed data. The current tree can be internally coherent while a rolling deploy is broken because old and new processes coexist.
+
+Check:
+
+- **Expand/contract order:** readers tolerate both old/new shapes before writers require the new shape; destructive removal happens only after old code is gone.
+- **Queue/event evolution:** new producers do not emit a payload old workers cannot parse; consumers default/branch on additive fields; version/type discriminators exist for semantic changes.
+- **Generated clients:** server compatibility window includes the currently shipped client, not only regenerated source in this diff.
+- **Feature flags:** both flag states remain valid during rollout; removing a flag also removes stale branches/config only after the rollout is complete.
+- **Schema/application coexistence:** migrations are safe while either application version is running; a rename uses additive column/table stages rather than one-step replacement.
+
+Evidence sources include deployment manifests, worker definitions, migration ordering, feature-flag declarations, API/version headers, and generated-client metadata. If rollout topology is absent from the repo, report `UNVERIFIED rollout assumption` as **MEDIUM** when mixed-version behavior could change the result; do not invent the deployment model.
+
+Use **HIGH** when old/new coexistence breaks a normal request/job or can corrupt/drop data. Use **MEDIUM** for an undocumented compatibility assumption that requires deployment evidence. Always `auto-fixable: false`.
+
 ### Step 4 — Return structured report
 
 Reply with ONLY a findings report in the shared markdown format from [`../findings-contract.md`](../findings-contract.md) (severity CRITICAL/HIGH/MEDIUM/LOW; `auto-fixable` on every line). Do not preamble.
@@ -141,6 +157,11 @@ Reply with ONLY a findings report in the shared markdown format from [`../findin
 4. **Generated client stale vs. producer** — `client.gen.ts` (mtime older than `src/fn/<fn>.ts`)
    - Fix: re-run the codegen command for this repo.
    - auto-fixable: false
+
+5. **New queue payload is unreadable by current workers during rollout** — `<producer-file>:<line>`
+   - Producer now requires `<field>`; existing worker parser at `<worker-file>:<line>` rejects it and no event version is present.
+   - Fix: deploy a backward-compatible consumer first, then enable the new producer payload.
+   - auto-fixable: false
 ```
 
 If there are zero findings, return exactly: `No contract drift detected.`
@@ -155,4 +176,5 @@ If there are zero findings, return exactly: `No contract drift detected.`
 - **NEVER scan the whole repo when a diff exists.** Default to diff scope; whole-repo only on explicit parent request. **Exception: Detector E.** When the diff changes a shared contract (shared component props, shared type, newly-required field), you MUST trace its consumers and producers even when they live outside the diff — that fan-in trace is targeted follow-the-contract search, not a whole-repo scan, and skipping it is exactly how a shared-component change ships broken on every unchanged page.
 - **NEVER report a "drift" without showing both shapes.** Each finding lists producer file:line AND consumer file:line, with the field names on each side. A finding the user can't verify in 10 seconds gets ignored.
 - **NEVER flag a field intentionally hidden from the DTO.** Treat omitted sensitive fields (`password_hash`, `internal_notes`) as design choices unless the diff shows the omission was accidental (added to DB without matching addition on the way out).
+- **NEVER assume deploys are atomic.** When a changed contract can cross long-lived processes, workers, generated clients, or migrations, verify coexistence evidence or state the rollout assumption as unverified.
 - **NEVER ask the parent or user clarifying questions.** Make a defensible call and flag uncertainty in the finding rather than blocking on a question.

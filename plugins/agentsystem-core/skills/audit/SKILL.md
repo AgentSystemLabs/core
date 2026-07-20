@@ -25,6 +25,8 @@ A whole-codebase tech-debt sweep. The diff-scoped `simplify` and the per-concern
 - `skip=<csv>` — comma-separated list of audit skill names to skip
 - `mode=fast|balanced|production` — `fast` runs only `simplify` + `harden-types` + typecheck/lint (the two "always" audits from Phase 4); `balanced` adds the high-leverage audits; `production` runs everything. Default `balanced` when invoked directly; honor caller-supplied mode otherwise.
 
+**Run-ledger handoff.** When `/ship` passes `run-id=` and `run-ledger=`, update that ledger at every phase/subagent/reviewer transition. Record scope/baseline decisions, every auditor task and fallback, finding dispositions from the reconciled ledger, applied fixes, and exact final verification evidence.
+
 ---
 
 ## Phase 2 — Architecture and data-flow map
@@ -63,6 +65,8 @@ Baseline failures get fixed first. Stacking refactors on top of a red baseline b
 
 Dispatch the reviewer-* auditors **concurrently via the `Agent` tool** (parallel fan-out) and run the skill-based audits (`simplify`, `harden-types`) via the `Skill` tool. Note the mechanics: **`Skill` invocations are sequential — only `Agent` subagent dispatches run in parallel** — so the reviewer fan-out parallelizes while the two skill audits run one after the other. Scope every audit to the agreed Phase 1 scope (not just the diff): pass `scope=<Phase 1 path>` to the skills and describe the scope to each subagent. Tell each auditor it is running **repo-wide in report-only mode** — findings are consolidated in Phase 5 and applied under the Phase 6 gate, never auto-fixed inline here.
 
+Apply the failure/recording policy in `add-feature/references/subagent-playbook.md`: classify each audit as mandatory for the selected mode or advisory, retry failed/malformed output once, use the inline fallback, and treat a mandatory audit with no valid output as a blocked audit rather than a clean scan.
+
 **Host-portability fallback.** If the `Skill` tool is not available in the current session (OpenAI Codex and other non-Claude-Code hosts), Read each applicable skill's SKILL.md at `plugins/agentsystem-core/skills/<skill-name>/SKILL.md` and execute them sequentially in this turn, treating each as the next phase of work. Reviewer subagents (`reviewer-*`) still go through the `Agent` tool — most CLIs that lack `Skill` still have a general-purpose agent primitive, and you can pass the reviewer's SKILL.md path to it. Surface the degradation up-front: tell the user "Skill tool unavailable — audits will run inline, sequentially, without subagent isolation." Inline sequential execution is slower and loses fan-out parallelism, but the findings are still produced.
 
 **Always (every mode):**
@@ -93,7 +97,11 @@ Honor `include=` and `skip=` from the caller — `include=` force-adds a named a
 
 ## Phase 5 — Consolidate findings
 
-Each audit returns a list. Merge into one report grouped by **severity** (critical / suggested / nit), then by **category**, then by **file**. Deduplicate findings that multiple audits flagged (e.g., a `Promise.all` miss flagged by both `audit-perf` and `simplify`) — keep one entry, cite both sources.
+Each audit returns a list. When 2+ reviewer agents ran, dispatch **`findings-reconciler`** (`Agent(subagent_type=findings-reconciler)`) with every full report, the architecture map/objective, scope/base SHA, and a manifest of expected/run/skipped auditors with reasons. It deduplicates by root cause, resolves conflicting fixes against code, preserves CRITICAL/HIGH/MEDIUM/LOW, and produces the disposition ledger used by Phase 6.
+
+If the specialized agent is unavailable, read `agents/findings-reconciler.md` and perform the same reconciliation inline. A missing or malformed mandatory auditor report is a coverage failure, not a zero-finding result.
+
+Merge skill-audit output into that ledger, grouped by **severity** (CRITICAL / HIGH / MEDIUM / LOW), then category and file. Deduplicate findings that multiple audits flagged (e.g., a `Promise.all` miss flagged by both `reviewer-perf` and `simplify`) — keep one entry and cite every source.
 
 Print the architecture summary and consolidated report **before** applying anything. Format:
 
@@ -105,8 +113,9 @@ Architecture summary
 
 Audit summary — N findings across K categories
   critical: <count>  — <one-line headline>
-  suggested: <count>
-  nit: <count>
+  high: <count>
+  medium: <count>
+  low: <count>
 
 By category:
   type-safety (12):    <top 1–2 examples with file:line>
@@ -141,10 +150,12 @@ Apply in this order to keep the diff bisectable:
 
 ## Phase 7 — Re-verify and report
 
-1. Re-run typecheck, linter, full test suite.
-2. Print final summary: architecture risks addressed, applied N, skipped M, surfaced K (couldn't auto-fix).
-3. List remaining surfaced findings the user must decide on (architectural, design-input-needed, out-of-scope-but-flagged).
-4. **Do not commit.** Hand off to the user: `/commit`, `/commit-and-push`, or `/open-pr`.
+1. Re-run typecheck, linter, full test suite, and production build where available; run the canonical residue + hardcoded-secret sweep from `check-pr-readiness` Phase 5 with `include-working-tree`.
+2. If Phase 6 changed code, exercise each changed behavior path (or the smallest representative runtime path for a structural refactor) and record the observed result. Static gates alone cannot establish `locally-verified`.
+3. Print final summary: architecture risks addressed, applied N, skipped M, surfaced K (couldn't auto-fix).
+4. List remaining surfaced findings the user must decide on (architectural, design-input-needed, out-of-scope-but-flagged).
+5. Report `locally-verified` only when all applied changes pass the final tree gate **and** runtime smoke evidence exists. Use `diagnosed` for report-only audits, `partial` for missing local/runtime evidence, and `blocked` for failed mandatory gates.
+6. **Do not commit.** Offer `/commit`, `/commit-and-push`, or `/open-pr` only for a locally verified changed candidate.
 
 ---
 
@@ -167,7 +178,7 @@ Apply in this order to keep the diff bisectable:
   **Why:** the autopilot caller may pass `fast` based on a heuristic that's wrong for an explicit audit request; the user's wording wins.
 
 - **NEVER auto-apply a fix that one audit flagged but another would conflict with**
-  **Instead:** during Phase 5 consolidation, mark conflicting findings and route them through the gate even if each individually looks mechanical.
+  **Instead:** during Phase 5 reconciliation, mark conflicting findings and route them through the gate even if each individually looks mechanical.
   **Why:** "extract this helper" from `simplify` can collide with "inline this for bundle size" from the `reviewer-client-bundle` subagent; the user decides which wins.
 
 - **NEVER skip the baseline gates in Phase 3**

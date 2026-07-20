@@ -115,8 +115,10 @@ flowchart TB
     FB --> L3
     AU --> L3
 
-    L3 --> REP["④ Report<br/>what ran · what was found · what's left"]
-    REP --> READY(["Code ready<br/>never commits or opens PRs"])
+    L3 --> REP["④ Report<br/>what ran · what was found · verification evidence"]
+    REP --> STATE{"Terminal state"}
+    STATE -->|"locally-verified"| READY(["Local candidate ready<br/>never commits or opens PRs"])
+    STATE -->|"diagnosed / partial / blocked"| STOP(["Stop with exact evidence or blocker"])
 
     subgraph L4["⑤ You publish — after reviewing the diff"]
         direction LR
@@ -133,8 +135,10 @@ flowchart TB
 1. **Classify intent** — CREATE, EVOLVE, POLISH, REMOVE, FIX, or AUDIT — from how you phrase the request.
 2. **Pick depth** — `fast` (tiny/cosmetic), `balanced` (default), or `production` (auth, payments, migrations, webhooks, jobs, multi-subsystem work).
 3. **Route** to one core workflow and announce the pipeline before running.
-4. **Fan out** to internal skills and read-only reviewers only when gates fire — migrations, tests, security/perf/contract audits, and more.
-5. **Report and stop** — you choose `/commit`, `/commit-and-push`, or `/open-pr` when you're ready.
+4. **Challenge risky plans** — production/high-risk multi-subsystem plans get an independent read-only red-team before approval.
+5. **Fan out** to internal skills and read-only reviewers only when gates fire — migrations, tests, security/perf/contract audits, and more.
+6. **Reconcile and verify** — parallel findings are deduplicated into one disposition ledger; complex production changes get a fresh combined-tree verifier after every mutation.
+7. **Report an honest terminal state** — `diagnosed`, `locally-verified`, `partial`, or `blocked`; only locally verified candidates are handed to publish skills.
 
 High-risk work (`production` mode) asks you to confirm before executing. `balanced` announces the plan and proceeds. `fast` just goes.
 
@@ -188,7 +192,15 @@ Scoped audits (diff or whole-app, depending on context): `audit-authz`, `audit-a
 
 ### Reviewer subagents (read-only, never edit files)
 
-`reviewer-authz`, `reviewer-security-regression`, `reviewer-data-integrity`, `reviewer-contracts`, `reviewer-concurrency`, `reviewer-error-boundaries`, `reviewer-loading-states`, `reviewer-accessibility-regression`, `reviewer-client-bundle`, `reviewer-observability-coverage`, `reviewer-perf`, plus helpers like `crud-surface-mapper`, `ui-pattern-inspector`, `utility-finder`, `runtime-contract-tracer`, `pr-comment-resolver`.
+`reviewer-authz`, `reviewer-security-regression`, `reviewer-data-integrity`, `reviewer-contracts`, `reviewer-concurrency`, `reviewer-error-boundaries`, `reviewer-loading-states`, `reviewer-accessibility-regression`, `reviewer-client-bundle`, `reviewer-observability-coverage`, `reviewer-perf`, plus helpers like `crud-surface-mapper`, `ui-pattern-inspector`, `utility-finder`, and `runtime-contract-tracer`.
+
+Production reliability roles are also read-only:
+
+- `plan-red-team` challenges risky plans against real code before approval.
+- `findings-reconciler` merges parallel reports, resolves conflicts, records coverage, and tracks disposition.
+- `integration-verifier` attacks combined-tree seams and reruns final gates after all mutating post-steps.
+
+These roles are adaptive, not a fixed fleet tax. Small and ordinary changes continue through the existing fast/balanced paths.
 
 **You should not `@` or slash-command these.** They exist so `/ship` can fan out parallel audits and return severity-ranked findings with file:line refs.
 
