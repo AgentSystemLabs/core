@@ -1,6 +1,6 @@
 {
   "name": "agentsystem-core",
-  "version": "0.52.0",
+  "version": "0.53.0",
   "description": "AgentSystem core skill collection — ship orchestration, feature delivery, feature modification, debugging, deletion, and code-quality skills.",
   "author": {
     "name": "webdevcody"
