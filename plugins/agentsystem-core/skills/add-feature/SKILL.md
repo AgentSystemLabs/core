@@ -134,9 +134,11 @@ Keep it lean — bullet points over prose. The plan exists to be reviewed, not t
 
 ### Adversarial plan challenge — GATED
 
-Before Phase 4, dispatch **`plan-red-team`** (`Agent(subagent_type=plan-red-team)`) when mode is `production` and the plan is high-risk, spans 3+ subsystems, changes persistence/public contracts, or supports parallel implementation. Give it the proposed plan, defining invariants, exploration evidence, locked user decisions, non-goals, and base SHA.
+Before Phase 4, dispatch **`plan-red-team`** (`Agent(subagent_type=plan-red-team)`) when mode is `production` and the plan is high-risk, spans 3+ subsystems, changes persistence/public contracts, or supports parallel implementation. Give it the proposed plan, defining invariants, exploration evidence, locked user decisions, non-goals, base SHA, and any known traffic/data-growth, availability, recovery, or cost constraints.
 
-Apply evidenced `AMEND` results to the plan, remove `KILL` items, merge duplicates, and surface every `BLOCKED` decision to the user. The parent—not the subagent—reconciles verdicts against code and user intent. Present the resulting plan, including what changed under challenge, at Phase 4.
+The challenge must cover the plan's relevant scalability, reliability/failure-isolation, performance/capacity, operability/observability, data-integrity/concurrency, security-boundary, deployment/rollback, and cost/complexity risks. Irrelevant dimensions must be marked `N/A`; unknown scale or availability requirements must be marked `UNVERIFIED` or `BLOCKED`, not guessed.
+
+Apply evidenced `AMEND` results to the plan, remove `KILL` items, merge duplicates, and surface every `BLOCKED` decision to the user. The parent—not the subagent—reconciles verdicts against code and user intent. Present the resulting plan, including what changed under challenge and the cross-cutting architecture checks, at Phase 4.
 
 **Host fallback:** if the specialized agent is unavailable, read `agents/plan-red-team.md` and execute its review inline before approval. This is a mandatory production gate when triggered; agent unavailability is not a reason to skip it.
 

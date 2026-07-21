@@ -71,6 +71,44 @@ describe('Fleet reliability integration contracts', () => {
     }
   });
 
+  test('production plan challenge covers architecture and relevant failure modes', () => {
+    const content = readFileSync(agent('plan-red-team'), 'utf8');
+    const architectureChecks = [
+      ['Scalability', /scalability/i],
+      ['Reliability and failure isolation', /reliability\/failure-isolation/i],
+      ['Performance and capacity', /performance\/capacity/i],
+      ['Operability and observability', /operability\/observability/i],
+      ['Data integrity and concurrency', /data-integrity\/concurrency/i],
+      ['Security boundaries', /security-boundary/i],
+      ['Deployment and rollback safety', /deployment\/rollback/i],
+      ['Cost and complexity', /cost\/complexity/i],
+    ];
+    const matrixStart = content.indexOf('### Cross-cutting architecture checks');
+    const matrixEnd = content.indexOf('### Relevant failure modes');
+    const matrix = content.slice(matrixStart, matrixEnd);
+    const statuses = '<SURVIVES | AMEND | BLOCKED | UNVERIFIED | N/A>';
+
+    assert.ok(matrixStart >= 0 && matrixEnd > matrixStart, 'plan-red-team missing architecture matrix');
+    for (const [label] of architectureChecks) {
+      assert.ok(
+        matrix.includes(`- ${label}: ${statuses}`),
+        `plan-red-team missing enforced architecture check "${label}"`,
+      );
+    }
+    assert.match(content, /Do not manufacture risks/i);
+    assert.match(content, /Do not invent scale or reliability requirements/i);
+    assert.match(content, /dependency timeout, outage, backlog, duplicate delivery/);
+    assert.match(content, /may remain `UNVERIFIED` under `PASS` only when .* cannot change the chosen design or its safety/);
+
+    for (const name of ['add-feature', 'modify-feature']) {
+      const workflow = skill(name);
+      assert.match(workflow, /subagent_type=plan-red-team/);
+      for (const [label, pattern] of architectureChecks) {
+        assert.match(workflow, pattern, `${name} does not require "${label}"`);
+      }
+    }
+  });
+
   test('feature mode matrix covers every review gate', () => {
     const content = skill('add-feature');
     const production = modeRow(content, 'production');

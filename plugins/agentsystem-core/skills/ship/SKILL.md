@@ -220,7 +220,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### CREATE → `add-feature` may invoke
 
-- **Adversarial orchestration:** `plan-red-team` before approval for triggered production plans; `findings-reconciler` after 2+ reviewers; `integration-verifier` after all mutations for complex production changes.
+- **Adversarial orchestration:** `plan-red-team` before approval for triggered production plans, including explicit scalability, reliability/failure-isolation, capacity, operability, rollback, and cost/complexity checks; `findings-reconciler` after 2+ reviewers; `integration-verifier` after all mutations for complex production changes.
 - **UI scaffolding (when feature is user-facing):** `agentsystem-core:add-empty-error-states` (empty + error UI), `agentsystem-core:polish-ui` (post-step UX checklist), `agentsystem-core:propagate-ui-pattern` (when 3+ siblings of a recurring surface exist).
 - **Backend scaffolding (when persisted data or schema changes):** `agentsystem-core:add-migration`, `agentsystem-core:add-observability` (integration-first lane), `agentsystem-core:audit-authz` (when the feature adds or changes server entry points with ownership/permission checks).
 - **Tests (Phase 8):** `agentsystem-core:write-tests` (unit/integration), `agentsystem-core:add-e2e-test` (browser flows when Playwright is wired).
@@ -229,7 +229,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 ### EVOLVE → `modify-feature` may invoke
 
-- **Adversarial orchestration:** production plan challenge when scope/risk triggers; findings reconciliation after parallel reviews; final integration verification for multi-subsystem/parallel work.
+- **Adversarial orchestration:** production plan challenge when scope/risk triggers, including explicit scalability, reliability/failure-isolation, capacity, operability, rollback, and cost/complexity checks; findings reconciliation after parallel reviews; final integration verification for multi-subsystem/parallel work.
 - **UI extensions:** `agentsystem-core:add-empty-error-states`, `agentsystem-core:polish-ui`.
 - **Backend extensions:** `agentsystem-core:add-migration`, `agentsystem-core:add-observability`, `agentsystem-core:audit-authz` (when the extension touches server entry points with ownership/permission checks).
 - **Tests:** `agentsystem-core:write-tests`, `agentsystem-core:add-e2e-test` when extension warrants browser coverage.
