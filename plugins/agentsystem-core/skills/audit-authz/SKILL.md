@@ -33,7 +33,7 @@ Decide the surface to audit and state it back to the user:
 
 ## Phase 2 — Dispatch the authz scan
 
-Dispatch the **`reviewer-authz`** subagent (`Agent(subagent_type=reviewer-authz)`) with the Phase 1
+Dispatch the **`reviewer-authz`** subagent (`Agent(subagent_type=agentsystem-core:reviewer-authz)`) with the Phase 1
 scope. It enumerates every server-side entry point, classifies each (public / authenticated /
 user-scoped / admin / service), and returns a severity-ranked markdown report
 (`## Authz scan — <N> findings`) covering anonymous access, IDOR, role-not-resource-scoped,

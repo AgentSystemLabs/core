@@ -126,7 +126,7 @@ Verify: typecheck clean; grep for old values returns nothing (except the migrati
 
 ## Post-step: data-integrity audit
 
-If Phase 5 touched persisted data, migrations, status/enum values, denormalized data, or data-access invariants, dispatch the **`reviewer-data-integrity`** subagent (`Agent(subagent_type=reviewer-data-integrity)`) before `simplify`. The realignment is not complete until the data-integrity pass either reports no issues or every finding is fixed or explicitly surfaced.
+If Phase 5 touched persisted data, migrations, status/enum values, denormalized data, or data-access invariants, dispatch the **`reviewer-data-integrity`** subagent (`Agent(subagent_type=agentsystem-core:reviewer-data-integrity)`) before `simplify`. The realignment is not complete until the data-integrity pass either reports no issues or every finding is fixed or explicitly surfaced.
 
 ---
 

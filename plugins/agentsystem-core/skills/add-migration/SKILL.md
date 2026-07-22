@@ -156,7 +156,7 @@ If the change was MUTATING or DESTRUCTIVE, remind the user that step 1 must depl
 
 ## Post-step: data-integrity audit
 
-After the migration file and any backfill script are in place, dispatch the **`reviewer-data-integrity`** subagent (`Agent(subagent_type=reviewer-data-integrity)`) against the migration + related code diff. It should check defaults/backfills, destructive rollout order, uniqueness assumptions, delete cascades, seed/test fixture drift, and data-access invariants before the migration is declared shippable.
+After the migration file and any backfill script are in place, dispatch the **`reviewer-data-integrity`** subagent (`Agent(subagent_type=agentsystem-core:reviewer-data-integrity)`) against the migration + related code diff. It should check defaults/backfills, destructive rollout order, uniqueness assumptions, delete cascades, seed/test fixture drift, and data-access invariants before the migration is declared shippable.
 
 ---
 

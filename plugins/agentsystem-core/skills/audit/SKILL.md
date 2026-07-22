@@ -74,18 +74,18 @@ Apply the failure/recording policy in `add-feature/references/subagent-playbook.
 - `harden-types` — strip `any`, dangerous casts, missing return types, missing boundary validation
 
 **Balanced and production:**
-- **`reviewer-data-integrity`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-data-integrity`).
-- **`reviewer-error-boundaries`** (subagent — dispatch via `Agent(subagent_type=reviewer-error-boundaries)`).
-- **`reviewer-loading-states`** (subagent — dispatch via `Agent(subagent_type=reviewer-loading-states)`).
-- **`reviewer-contracts`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-contracts`).
-- **`reviewer-observability-coverage`** (subagent — dispatch via `Agent(subagent_type=reviewer-observability-coverage)`).
-- **`reviewer-perf`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-perf`; isolates the read-heavy perf audit from the parent context). The `audit-perf` skill remains available as a manual entry point.
+- **`reviewer-data-integrity`** (subagent — dispatch via the `Agent` tool with `subagent_type=agentsystem-core:reviewer-data-integrity`).
+- **`reviewer-error-boundaries`** (subagent — dispatch via `Agent(subagent_type=agentsystem-core:reviewer-error-boundaries)`).
+- **`reviewer-loading-states`** (subagent — dispatch via `Agent(subagent_type=agentsystem-core:reviewer-loading-states)`).
+- **`reviewer-contracts`** (subagent — dispatch via the `Agent` tool with `subagent_type=agentsystem-core:reviewer-contracts`).
+- **`reviewer-observability-coverage`** (subagent — dispatch via `Agent(subagent_type=agentsystem-core:reviewer-observability-coverage)`).
+- **`reviewer-perf`** (subagent — dispatch via the `Agent` tool with `subagent_type=agentsystem-core:reviewer-perf`; isolates the read-heavy perf audit from the parent context). The `audit-perf` skill remains available as a manual entry point.
 
 **Production only (additionally):**
-- **`reviewer-authz`** (subagent — dispatch via `Agent(subagent_type=reviewer-authz)`). Missing-auth/IDOR is the **highest-severity class a production-readiness audit can find**, and `reviewer-security-regression` explicitly defers authorization — so authz must run as its own pass or it stays structurally invisible.
-- **`reviewer-security-regression`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-security-regression`; isolates the read-heavy security audit from the parent context).
-- **`reviewer-concurrency`** (subagent — dispatch via the `Agent` tool with `subagent_type=reviewer-concurrency`).
-- **`reviewer-client-bundle`** (subagent — dispatch via `Agent(subagent_type=reviewer-client-bundle)`).
+- **`reviewer-authz`** (subagent — dispatch via `Agent(subagent_type=agentsystem-core:reviewer-authz)`). Missing-auth/IDOR is the **highest-severity class a production-readiness audit can find**, and `reviewer-security-regression` explicitly defers authorization — so authz must run as its own pass or it stays structurally invisible.
+- **`reviewer-security-regression`** (subagent — dispatch via the `Agent` tool with `subagent_type=agentsystem-core:reviewer-security-regression`; isolates the read-heavy security audit from the parent context).
+- **`reviewer-concurrency`** (subagent — dispatch via the `Agent` tool with `subagent_type=agentsystem-core:reviewer-concurrency`).
+- **`reviewer-client-bundle`** (subagent — dispatch via `Agent(subagent_type=agentsystem-core:reviewer-client-bundle)`).
 - **`audit-a11y`** (skill — whole-app accessibility, invoked with `scope=<Phase 1 scope>`). Use `audit-a11y`, **not** `reviewer-accessibility-regression`, for the repo-wide pass: the reviewer is documented as changed-files-only and would under-scan a whole-repo audit.
 
 **Stack-conditional (auto-include when the stack matches):**
@@ -97,7 +97,7 @@ Honor `include=` and `skip=` from the caller — `include=` force-adds a named a
 
 ## Phase 5 — Consolidate findings
 
-Each audit returns a list. When 2+ reviewer agents ran, dispatch **`findings-reconciler`** (`Agent(subagent_type=findings-reconciler)`) with every full report, the architecture map/objective, scope/base SHA, and a manifest of expected/run/skipped auditors with reasons. It deduplicates by root cause, resolves conflicting fixes against code, preserves CRITICAL/HIGH/MEDIUM/LOW, and produces the disposition ledger used by Phase 6.
+Each audit returns a list. When 2+ reviewer agents ran, dispatch **`findings-reconciler`** (`Agent(subagent_type=agentsystem-core:findings-reconciler)`) with every full report, the architecture map/objective, scope/base SHA, and a manifest of expected/run/skipped auditors with reasons. It deduplicates by root cause, resolves conflicting fixes against code, preserves CRITICAL/HIGH/MEDIUM/LOW, and produces the disposition ledger used by Phase 6.
 
 If the specialized agent is unavailable, read `agents/findings-reconciler.md` and perform the same reconciliation inline. A missing or malformed mandatory auditor report is a coverage failure, not a zero-finding result.
 

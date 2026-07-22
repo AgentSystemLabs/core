@@ -75,7 +75,7 @@ gh api graphql -f query='
 
 ## Phase 3 — Per-thread loop (fan out to subagents)
 
-For each unresolved thread, in order from oldest to newest, **dispatch the `pr-comment-resolver` subagent** (via `Agent(subagent_type=pr-comment-resolver)`) — one subagent invocation per thread, sequentially. Each subagent isolates the read-edit-commit-reply-resolve work in a fresh context, so the parent's window stays clean as you work through 10+ threads.
+For each unresolved thread, in order from oldest to newest, **dispatch the `pr-comment-resolver` subagent** (via `Agent(subagent_type=agentsystem-core:pr-comment-resolver)`) — one subagent invocation per thread, sequentially. Each subagent isolates the read-edit-commit-reply-resolve work in a fresh context, so the parent's window stays clean as you work through 10+ threads.
 
 **Pass to the subagent** (per invocation):
 

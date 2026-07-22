@@ -30,7 +30,7 @@ data-access functions it calls). Do not chase the entire dependency graph.
 
 ## Phase 2 — Dispatch the perf scan
 
-Dispatch the **`reviewer-perf`** subagent (`Agent(subagent_type=reviewer-perf)`) with the Phase 1
+Dispatch the **`reviewer-perf`** subagent (`Agent(subagent_type=agentsystem-core:reviewer-perf)`) with the Phase 1
 scope. It runs the full pattern sweep — N+1 queries, missing indexes, `SELECT *`, sequential awaits,
 server-only bundle leakage, synchronous I/O in handlers, unbounded fetches, loader waterfalls,
 unmemoized hot-path computations, unvirtualized lists — triages false positives, and returns a

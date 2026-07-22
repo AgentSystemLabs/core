@@ -47,7 +47,7 @@ Launch the reuse lookup (Agent 1, via `utility-finder`) and the two review agent
 
 ### Agent 1 — Code Reuse (dispatch `utility-finder`)
 
-Don't re-describe utility-finder's job — dispatch the real subagent. For each genuinely new function/helper the diff introduces, dispatch `utility-finder` (`Agent(subagent_type=utility-finder)`) with the function's signature/behavior (or a noun phrase like "format duration"); it returns ranked existing equivalents with file:line refs and a reuse / extend / write-new verdict. Batch the independent lookups into parallel dispatches in one message.
+Don't re-describe utility-finder's job — dispatch the real subagent. For each genuinely new function/helper the diff introduces, dispatch `utility-finder` (`Agent(subagent_type=agentsystem-core:utility-finder)`) with the function's signature/behavior (or a noun phrase like "format duration"); it returns ranked existing equivalents with file:line refs and a reuse / extend / write-new verdict. Batch the independent lookups into parallel dispatches in one message.
 
 Separately — without a subagent — flag duplicate code blocks **within the diff itself** (copy-paste of 3+ lines with minor variation) and inline logic that obviously duplicates a standard utility. That's local to the diff and doesn't need a repo-wide search.
 
