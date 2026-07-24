@@ -14,28 +14,15 @@ import { initCommand } from '../cli/commands/init.js';
 import { supportedHarnesses } from '../cli/lib/paths.js';
 import { packageRoot } from '../cli/lib/paths.js';
 
-const SAMPLE_SKILL = 'commit';
-const SAMPLE_AGENT = 'utility-finder';
+// The plugin now registers exactly one skill, `ship`, with its workflow
+// playbooks and reviewer subagents bundled inside it. Installing must copy
+// that whole subtree and register no separate agents.
+const SKILL = 'ship';
+const BUNDLED_PLAYBOOK = 'add-feature';
+const BUNDLED_SUBAGENT = 'utility-finder';
 
 function readText(path) {
   return readFileSync(path, 'utf-8');
-}
-
-function assertSkillInstalled(skillsDest) {
-  const skillDir = join(skillsDest, SAMPLE_SKILL);
-  const skillFile = join(skillDir, 'SKILL.md');
-
-  assert.ok(existsSync(skillFile), `expected ${skillFile} to exist`);
-
-  return readText(skillFile);
-}
-
-function assertAgentInstalled(agentsDest, extension) {
-  const agentFile = join(agentsDest, `${SAMPLE_AGENT}${extension}`);
-
-  assert.ok(existsSync(agentFile), `expected ${agentFile} to exist`);
-
-  return readText(agentFile);
 }
 
 function assertJsonQuotedFrontmatter(content, field) {
@@ -46,52 +33,26 @@ function assertJsonQuotedFrontmatter(content, field) {
 
 const HARNESS_ASSERTIONS = {
   claude: {
-    agentExtension: '.md',
     assertSkill(content) {
-      assert.match(content, /^---\nname: commit/m);
-      assert.doesNotMatch(content, /^name: "commit"/m);
-    },
-    assertAgent(content) {
-      assert.match(content, /^---\nname: utility-finder/m);
-      assert.doesNotMatch(content, /^mode: subagent/m);
+      assert.match(content, /^---\nname: ship/m);
+      assert.doesNotMatch(content, /^name: "ship"/m);
     },
   },
   codex: {
-    agentExtension: '.toml',
     assertSkill(content) {
       assertJsonQuotedFrontmatter(content, 'name');
       assertJsonQuotedFrontmatter(content, 'description');
-    },
-    assertAgent(content) {
-      assert.match(content, /^name = "utility-finder"/m);
-      assert.match(content, /^description = "/m);
-      assert.match(content, /^developer_instructions = """/m);
     },
   },
   cursor: {
-    agentExtension: '.md',
     assertSkill(content) {
-      assert.match(content, /^---\nname: commit/m);
-    },
-    assertAgent(content) {
-      assert.match(content, /^---\nname: utility-finder/m);
-      assert.doesNotMatch(content, /^mode: subagent/m);
+      assert.match(content, /^---\nname: ship/m);
     },
   },
   opencode: {
-    agentExtension: '.md',
     assertSkill(content) {
       assertJsonQuotedFrontmatter(content, 'name');
       assertJsonQuotedFrontmatter(content, 'description');
-    },
-    assertAgent(content) {
-      assert.match(content, /^mode: subagent/m);
-      assert.match(content, /^permission:/m);
-      // utility-finder is a least-privilege read-only helper (tools: Read, Grep, Glob —
-      // no Bash) → both edit and bash denied. Permissions are derived from `tools:`.
-      assert.match(content, /^\s+edit: deny/m);
-      assert.match(content, /^\s+bash: deny/m);
-      assert.match(content, /^# utility-finder/m);
     },
   },
 };
@@ -133,7 +94,7 @@ describe('init harness installs', () => {
         rmSync(tmpDir, { recursive: true, force: true });
       });
 
-      test('installs plugin skills and subagents with harness-specific formatting', async () => {
+      test('installs the single ship skill with its bundled playbooks and subagents', async () => {
         await initCommand({
           harness,
           dest: skillsDest,
@@ -144,37 +105,36 @@ describe('init harness installs', () => {
           skipAgents: false,
         });
 
-        const expectations = HARNESS_ASSERTIONS[harness];
-        const skillContent = assertSkillInstalled(skillsDest);
-        const agentContent = assertAgentInstalled(
-          agentsDest,
-          expectations.agentExtension
+        // The one registered skill installs, with harness-specific SKILL.md formatting.
+        const shipDir = join(skillsDest, SKILL);
+        const shipFile = join(shipDir, 'SKILL.md');
+        assert.ok(existsSync(shipFile), `expected ${shipFile} to exist`);
+        HARNESS_ASSERTIONS[harness].assertSkill(readText(shipFile));
+
+        // The bundled tree is copied recursively alongside SKILL.md.
+        assert.ok(
+          existsSync(join(shipDir, 'playbooks', BUNDLED_PLAYBOOK, 'PLAYBOOK.md')),
+          'bundled workflow playbook must install inside the ship skill'
+        );
+        assert.ok(
+          existsSync(join(shipDir, 'subagents', `${BUNDLED_SUBAGENT}.md`)),
+          'bundled reviewer subagent must install inside the ship skill'
         );
 
-        expectations.assertSkill(skillContent);
-        expectations.assertAgent(agentContent);
-
-        // Regression: OpenCode permissions are derived from each agent's `tools:`,
-        // so an *editing* agent (pr-comment-resolver declares Edit + Write) must
-        // get edit: allow — the old hardcoded edit: deny broke it.
-        if (harness === 'opencode') {
-          const editingAgent = readText(join(agentsDest, 'pr-comment-resolver.md'));
-          assert.match(
-            editingAgent,
-            /^\s+edit: allow/m,
-            'editing agent (pr-comment-resolver) must get edit: allow'
-          );
-        }
-
+        // Exactly one skill installs; no separately-registered agents
+        // (subagents are bundled, dispatched by ship at runtime).
         const installedSkills = readdirSync(skillsDest).filter(entry =>
           statSync(join(skillsDest, entry)).isDirectory()
         );
-        const installedAgents = readdirSync(agentsDest).filter(entry =>
-          statSync(join(agentsDest, entry)).isFile()
+        assert.deepEqual(
+          installedSkills.sort(),
+          ['ship'],
+          'only the single ship skill should install'
         );
-
-        assert.ok(installedSkills.length > 1, 'expected multiple skills to install');
-        assert.ok(installedAgents.length > 1, 'expected multiple agents to install');
+        assert.ok(
+          !existsSync(agentsDest),
+          'no separate agents directory is created — subagents ship bundled under ship/'
+        );
       });
     });
   }

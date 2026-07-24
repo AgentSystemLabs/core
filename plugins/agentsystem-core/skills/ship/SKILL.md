@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Autopilot orchestrator for engineering work. Classifies the user's request as CREATE / EVOLVE / POLISH / REMOVE / FIX / AUDIT, infers a depth mode (fast / balanced / production) from risk + complexity signals, announces the pipeline, then routes to the matching core skill (add-feature / modify-feature / polish-ui / remove-feature / fix-bug / audit) with mode= and any include= / skip= overrides. STOPS at code-ready — never commits, pushes, or opens PRs. Use when the user describes a goal and wants the system to pick the right workflow and depth on its own. Trigger phrases — "ship", "/ship", "ship this", "just build this", "make this happen", "figure it out for me", "autopilot this", "engineer this end-to-end", "production-ready this". Skip for — when a specific workflow is already named (call /add-feature, /modify-feature, /polish-ui, /fix-bug, /remove-feature directly), pure git operations (/commit, /commit-and-push, /open-pr), planning-only requests, or single-line cosmetic tweaks done inline without orchestration.
+description: The single entry point for the AgentSystem engineering pipeline. Invoke EXPLICITLY only — it must not auto-fire on generic build/fix requests. Classifies the goal as CREATE / EVOLVE / POLISH / REMOVE / FIX / AUDIT, infers a depth mode (`mode=fast|balanced|production`, with `include=`/`skip=` phase overrides forwarded downstream), announces the pipeline, then runs the matching bundled workflow playbook (add-feature / modify-feature / polish-ui / remove-feature / fix-bug / audit), which in turn dispatches the bundled reviewer subagents. STOPS at code-ready — never commits, pushes, or opens PRs. Trigger ONLY on explicit invocation — "use ship skill", "ship", "/ship", "ship this", "autopilot this". Skip for everything else, including pure git operations, planning-only requests, and questions about the codebase: if the user did not explicitly ask for ship, do not invoke it.
 ---
 
 > **User-question protocol:** Whenever this skill needs the user to pick between options, confirm an action, or answer a multiple-choice prompt, you MUST call the `AskUserQuestion` tool to render a proper interactive picker. Do NOT print numbered options as plain text and wait for the user to type a number — that produces a degraded UX. Free-form questions (open-ended typing) may be asked in prose, but any time you would write "1) … 2) … 3) …", use `AskUserQuestion` instead.
@@ -11,6 +11,20 @@ description: Autopilot orchestrator for engineering work. Classifies the user's 
 The user gave you an engineering goal. Pick the right workflow, pick the right depth, announce both, run the workflow, report. Stop before git.
 
 The tax on a vibe coder is choosing which skill to invoke and how thorough to be. This skill takes that tax off them — without hiding what was decided.
+
+---
+
+## Bundled reference resolution — read before executing anything
+
+This plugin registers exactly **one** skill: `ship`. Every workflow and reviewer named in this file and in every playbook it loads — `add-feature`, `reviewer-code`, `write-tests`, `plan-red-team`, `findings-reconciler`, etc. — is a **bundled file inside this skill**, not a separately registered skill or agent. **Do not call the `Skill` tool for them and do not pass their names as `subagent_type`** — nothing but `ship` is registered, so both error.
+
+Resolve every bundled reference by reading a file, relative to the **ship skill directory** (the directory holding THIS file; `${CLAUDE_PLUGIN_ROOT}/skills/ship/` when that env var is set):
+
+- **`playbooks/<name>/PLAYBOOK.md`** — a workflow or sub-skill. **Read it and follow it inline** as your next phase of work, carrying the same args (`mode=`, `run-id=`, `run-ledger=`, `headless=`). Ship-root-relative.
+- **`subagents/<name>.md`** — a reviewer / mapper / verifier / tracer. **Read it, then dispatch a fresh subagent** with the `Agent` tool using `subagent_type: "general-purpose"`, passing the file's body as the leading instructions followed by the concrete scope (diff, plan, artifact name, file list). These agents are read-only by role — tell them not to edit files. Dispatch several in one message to run them in parallel; that fan-out and their fresh-context isolation are the entire reason they are subagents rather than inline work — preserve both. Ship-root-relative.
+- **`references/<file>`** — a checklist or reference doc. Relative to the **playbook currently being followed** (not ship-root). Read it in place. **Exception — shared references:** when a playbook cites a file as `ship`'s `references/<file>` (the shared `risk-signals.md` and `run-ledger.md`), resolve it at **ship-root** `references/`, not the playbook's own folder — those two are single-source and shared across playbooks.
+
+If any instruction still shows an old `Skill(skill="X")` call or an `Agent(subagent_type=agentsystem-core:Y)` call, treat it as `playbooks/X/PLAYBOOK.md` / `subagents/Y.md` respectively.
 
 ---
 
@@ -50,9 +64,9 @@ Read the user's prompt and map to one of six core skills:
 **Refactor / test-authoring prompts** — two common asks sit just outside the six intents but *do* have a home:
 - "refactor this module", "clean this up", "DRY this", "find code smells" → route to `simplify` (pass `scope=<the named path>` so it isn't diff-limited). If the "refactor" actually changes behavior, it's EVOLVE → `modify-feature` instead.
 - "write tests for X", "add test coverage", "cover this with tests" → route to `write-tests`.
-Announce these like any other routing (Detected / Mode / Pipeline), then delegate via the `Skill` tool.
+Announce these like any other routing (Detected / Mode / Pipeline), then run the bundled playbook inline — read `playbooks/simplify/PLAYBOOK.md` or `playbooks/write-tests/PLAYBOOK.md` per **Bundled reference resolution**.
 
-**No-match prompts** — if the user's request doesn't fit any intent above (e.g., explain code, document a flow, compare approaches, ask a question about the codebase, brainstorm features, or scaffold a new app from zero), /ship is the wrong tool. Stop and tell the user the request doesn't map to an engineering workflow this skill orchestrates, and — if the match is obvious — point at the matching skill directly (e.g., "review this PR" → `/review`, "sync the docs" → `/sync-docs`, "explain this module" → no skill needed, just answer in the conversation).
+**No-match prompts** — if the user's request doesn't fit any intent above (e.g., explain code, document a flow, compare approaches, ask a question about the codebase, brainstorm features, or scaffold a new app from zero), /ship is the wrong tool. Stop and tell the user the request doesn't map to an engineering workflow this skill orchestrates, and — if the match is obvious — point at the matching tool directly (e.g., "review this PR" → `/review`, "explain this module" → no skill needed, just answer in the conversation).
 
 ---
 
@@ -113,31 +127,20 @@ In headless runs the `production` confirm prompt is skipped like the others: pri
 
 ---
 
-## Step 4 — Execute via the routed core skill
+## Step 4 — Execute the routed workflow
 
-Invoke the matching core skill with the **`Skill`** tool. Pass:
+Routing is an **inline playbook read**, per **Bundled reference resolution** above — not a `Skill` call (the workflows are bundled files, not registered skills). Take the workflow name for the intent from Step 1 (`add-feature` for CREATE, `modify-feature` for EVOLVE, `polish-ui` for POLISH, `remove-feature` for REMOVE, `fix-bug` for FIX, `audit` for AUDIT), then:
 
-- The user's original goal as the body of the prompt
-- `mode=<resolved>`
-- `headless=true` when the run is headless — the routed skill converts its own question points to recorded assumptions
-- `run-id=<id>` and `run-ledger=<absolute path>` — the routed skill must update its phase, subagent, reviewer, finding-disposition, and verification records in this ledger
-- Any `include=<csv>` and `skip=<csv>` overrides parsed from the user's prompt
+1. **Read `playbooks/<workflow>/PLAYBOOK.md`** (ship-root-relative).
+2. **Follow it inline** as your next phase of work, carrying:
+   - the user's original goal
+   - `mode=<resolved>`
+   - `headless=true` when the run is headless — the playbook converts its own question points to recorded assumptions
+   - `run-id=<id>` and `run-ledger=<absolute path>` — update phase, subagent, reviewer, finding-disposition, and verification records in this ledger
+   - any `include=<csv>` / `skip=<csv>` overrides parsed from the user's prompt
+3. The playbook dispatches its own reviewer subagents (`subagents/*.md`) through the `Agent` tool per the resolution rule. Those dispatches are where fresh-context isolation and fan-out parallelism live — let them happen; don't collapse them into your own context.
 
-Example invocation for CREATE at production mode:
-
-```
-Skill(skill="add-feature", args="add stripe webhook handler mode=production run-id=<id> run-ledger=<path>")
-```
-
-The core skill runs the actual workflow. /ship is a router, not a re-implementation.
-
-**Host-portability fallback.** The `Skill` tool is a Claude Code primitive and may not exist in other agent CLIs (OpenAI Codex, Cursor, Cline, raw API runs, etc.). If `Skill` is not available in the current session:
-
-1. Read the routed skill's SKILL.md directly — for the core skills it's `plugins/agentsystem-core/skills/<skill-name>/SKILL.md` in this repo, or the equivalent path the host loads skills from.
-2. Execute its instructions inline as your next phase of work, passing the same args you would have passed to `Skill(...)`, including the run ID and ledger path.
-3. Surface the degradation in the Step 3 announcement: add a line like `Routing:  inline (Skill tool unavailable — no subagent isolation, parent context will carry the routed skill's work)`. The user must know the run isn't isolated.
-
-Inline execution loses subagent context isolation but preserves routing decisions, mode propagation, and downstream audit gates. That is acceptable degradation. Refusing to run because `Skill` is missing is not.
+The playbook is the engine; /ship is the router. Read it fresh each run rather than reconstructing it from memory — that keeps the engine canonical after every update.
 
 **Respect downstream gates.** `add-feature mode=production` has its own Plan-approval gate. Let it fire. Don't bypass it from /ship.
 
@@ -163,10 +166,7 @@ Findings:
 Terminal state: <diagnosed | locally-verified | partial | blocked>
 Evidence: <final commands and runtime observation, or the exact missing/failed gate>
 
-When terminal state is locally-verified, to publish:
-  • /commit           — group the working tree into staged commits without pushing
-  • /commit-and-push  — commit then push the current branch to its remote
-  • /open-pr          — open a GitHub PR (commits then pushes if needed)
+When terminal state is locally-verified, publishing is yours to drive — this plugin stops at code-ready and does not commit, push, or open PRs. Hand the working tree off to your own git workflow.
 ```
 
 Use exactly one terminal state:
@@ -187,7 +187,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 ## NEVER
 
 - **NEVER commit, push, or open PRs from inside this skill**
-  **Instead:** Stop at Step 5 and direct the user to `/commit`, `/commit-and-push`, or `/open-pr`.
+  **Instead:** Stop at Step 5 and hand off to the user's own git workflow.
   **Why:** Engineering rigor and release decisions run on different cadences. Auto-publishing from an autopilot run removes the user's chance to review the diff and forces a one-size-fits-all release path on every project.
 
 - **NEVER bypass a routed core skill's own approval gate**
@@ -195,7 +195,7 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
   **Why:** Routing past a gate that the core skill author put there means the user gets a fast-mode experience while believing they're in production mode. Trust collapses on the first surprise side effect.
 
 - **NEVER replicate the core skill's pipeline inline from memory**
-  **Instead:** Always delegate. Use the `Skill` tool when the host exposes it; when it doesn't (Codex and other non-Claude-Code hosts), Read the routed skill's SKILL.md and follow that file verbatim — do not improvise the pipeline from your own recall of what `add-feature` or `fix-bug` "usually does". /ship is a router; the SKILL.md is the engine.
+  **Instead:** Always read the bundled playbook and follow it. Read `playbooks/<workflow>/PLAYBOOK.md` and follow that file verbatim — do not improvise the pipeline from your own recall of what `add-feature` or `fix-bug` "usually does". /ship is a router; the playbook is the engine.
   **Why:** Inlined pipelines drift from canonical core-skill behavior on every update. Two implementations of the same workflow guarantees one will be wrong after the next change to either. Reading the file each run keeps the engine canonical even when the `Skill` tool isn't available.
 
 - **NEVER hide which mode and pipeline you picked**
@@ -221,18 +221,18 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 ### CREATE → `add-feature` may invoke
 
 - **Adversarial orchestration:** `plan-red-team` before approval for triggered production plans, including explicit scalability, reliability/failure-isolation, capacity, operability, rollback, and cost/complexity checks; `findings-reconciler` after 2+ reviewers; `integration-verifier` after all mutations for complex production changes.
-- **UI scaffolding (when feature is user-facing):** `agentsystem-core:add-empty-error-states` (empty + error UI), `agentsystem-core:polish-ui` (post-step UX checklist), `agentsystem-core:propagate-ui-pattern` (when 3+ siblings of a recurring surface exist).
-- **Backend scaffolding (when persisted data or schema changes):** `agentsystem-core:add-migration`, `agentsystem-core:add-observability` (integration-first lane), `agentsystem-core:audit-authz` (when the feature adds or changes server entry points with ownership/permission checks).
-- **Tests (Phase 8):** `agentsystem-core:write-tests` (unit/integration), `agentsystem-core:add-e2e-test` (browser flows when Playwright is wired).
-- **Audits (Phase 7 gates):** reviewer-* subagents (contracts, concurrency, data-integrity, security-regression, error-boundaries, loading-states, accessibility-regression, client-bundle, observability-coverage, perf, authz), audit-perf, audit-responsive.
+- **UI scaffolding (when feature is user-facing):** `playbooks/add-empty-error-states/PLAYBOOK.md` (empty + error UI), `playbooks/polish-ui/PLAYBOOK.md` (post-step UX checklist), `playbooks/propagate-ui-pattern/PLAYBOOK.md` (when 3+ siblings of a recurring surface exist).
+- **Backend scaffolding (when persisted data or schema changes):** `playbooks/add-migration/PLAYBOOK.md`, `playbooks/add-observability/PLAYBOOK.md` (integration-first lane), `playbooks/audit-authz/PLAYBOOK.md` (when the feature adds or changes server entry points with ownership/permission checks).
+- **Tests (Phase 8):** `playbooks/write-tests/PLAYBOOK.md` (unit/integration), `playbooks/add-e2e-test/PLAYBOOK.md` (browser flows when Playwright is wired).
+- **Audits (Phase 7 gates):** reviewer-* subagents (contracts, concurrency, data-integrity, security-regression, error-boundaries, loading-states, accessibility-regression, client-bundle, observability-coverage, perf, authz).
 - **Cleanup (post-step):** simplify, polish-ui.
 
 ### EVOLVE → `modify-feature` may invoke
 
 - **Adversarial orchestration:** production plan challenge when scope/risk triggers, including explicit scalability, reliability/failure-isolation, capacity, operability, rollback, and cost/complexity checks; findings reconciliation after parallel reviews; final integration verification for multi-subsystem/parallel work.
-- **UI extensions:** `agentsystem-core:add-empty-error-states`, `agentsystem-core:polish-ui`.
-- **Backend extensions:** `agentsystem-core:add-migration`, `agentsystem-core:add-observability`, `agentsystem-core:audit-authz` (when the extension touches server entry points with ownership/permission checks).
-- **Tests:** `agentsystem-core:write-tests`, `agentsystem-core:add-e2e-test` when extension warrants browser coverage.
+- **UI extensions:** `playbooks/add-empty-error-states/PLAYBOOK.md`, `playbooks/polish-ui/PLAYBOOK.md`.
+- **Backend extensions:** `playbooks/add-migration/PLAYBOOK.md`, `playbooks/add-observability/PLAYBOOK.md`, `playbooks/audit-authz/PLAYBOOK.md` (when the extension touches server entry points with ownership/permission checks).
+- **Tests:** `playbooks/write-tests/PLAYBOOK.md`, `playbooks/add-e2e-test/PLAYBOOK.md` when extension warrants browser coverage.
 - **Contract / concurrency / data audits:** reviewer-* subagents (contracts, concurrency, observability-coverage, data-integrity, security-regression, error-boundaries, loading-states, accessibility-regression, client-bundle).
 - **Cleanup:** simplify, polish-ui.
 
@@ -244,17 +244,17 @@ Surface findings, not just "done." If a sub-skill audit (security, perf, a11y, d
 
 - **Adversarial orchestration:** findings reconciliation after parallel post-fix reviews and final integration verification for complex production patches.
 - **Reviewers (gated by the patch surface):** reviewer-contracts, reviewer-authz, reviewer-concurrency, reviewer-data-integrity, reviewer-observability-coverage, reviewer-security-regression, reviewer-error-boundaries.
-- **Backend / domain adjuncts:** `agentsystem-core:add-migration` (corrective migration), `agentsystem-core:add-observability` (missing evidence), `agentsystem-core:realign` (domain-model mismatch).
-- **Regression pinning (balanced + production):** `agentsystem-core:add-regression-test`.
-- **Cleanup:** `agentsystem-core:simplify` (always), `agentsystem-core:polish-ui` (if UI changed, non-copy).
+- **Backend / domain adjuncts:** `playbooks/add-migration/PLAYBOOK.md` (corrective migration), `playbooks/add-observability/PLAYBOOK.md` (missing evidence), `playbooks/realign/PLAYBOOK.md` (domain-model mismatch).
+- **Regression pinning (balanced + production):** `playbooks/add-regression-test/PLAYBOOK.md`.
+- **Cleanup:** `playbooks/simplify/PLAYBOOK.md` (always), `playbooks/polish-ui/PLAYBOOK.md` (if UI changed, non-copy).
 
 ### REMOVE → `remove-feature` may invoke
 
-- **Schema cleanup:** `agentsystem-core:add-migration` (when removal drops columns/tables).
+- **Schema cleanup:** `playbooks/add-migration/PLAYBOOK.md` (when removal drops columns/tables).
 - **Verification:** reviewer-data-integrity and reviewer-contracts subagents.
 
 ### AUDIT → `audit` may invoke
 
-- The reviewer-* subagent fleet across the repo (contracts, data-integrity, error-boundaries, loading-states, observability-coverage, perf, authz, security-regression, concurrency, client-bundle) plus `simplify`, `harden-types`, and `audit-a11y` (whole-app a11y). When 2+ reviewers run, `findings-reconciler` produces the deduplicated disposition ledger. The per-route `audit-perf` / `audit-responsive` / `audit-seo-meta` / `audit-analytics` skills are **manual entry points**, not part of audit's default battery. See `audit/SKILL.md` for exactly which auditors fire at each mode.
+- The reviewer-* subagent fleet across the repo (contracts, data-integrity, error-boundaries, loading-states, observability-coverage, perf, authz, security-regression, concurrency, client-bundle) plus `simplify`, `harden-types`, and `audit-a11y` (whole-app a11y). When 2+ reviewers run, `findings-reconciler` produces the deduplicated disposition ledger. See `playbooks/audit/PLAYBOOK.md` for exactly which auditors fire at each mode.
 
 **Course-author note:** because these are gate-driven, a given /ship run will invoke only a subset. The Step 5 pipeline summary names exactly which ones did fire — that's the authoritative record, not this appendix.

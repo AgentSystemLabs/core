@@ -9,7 +9,8 @@ const SHIP = join(
   'plugins/agentsystem-core/skills/ship/SKILL.md',
 );
 const FIXTURES = join(packageRoot, 'evals/ship-routing.fixtures.json');
-const SKILLS_DIR = join(packageRoot, 'plugins/agentsystem-core/skills');
+// Routes are now bundled workflow playbooks inside the single ship skill.
+const PLAYBOOKS_DIR = join(packageRoot, 'plugins/agentsystem-core/skills/ship/playbooks');
 
 const VALID_MODES = new Set(['fast', 'balanced', 'production']);
 const TABLE_INTENTS = new Set(['CREATE', 'EVOLVE', 'POLISH', 'REMOVE', 'FIX', 'AUDIT']);
@@ -42,8 +43,8 @@ describe('ship routing fixtures', () => {
         `invalid mode "${fx.mode}" for prompt "${fx.prompt}"`,
       );
       assert.ok(
-        existsSync(join(SKILLS_DIR, fx.route)),
-        `route "${fx.route}" is not a real skill directory`,
+        existsSync(join(PLAYBOOKS_DIR, fx.route)),
+        `route "${fx.route}" is not a real bundled playbook`,
       );
 
       if (TABLE_INTENTS.has(fx.intent)) {

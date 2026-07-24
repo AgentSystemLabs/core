@@ -2,7 +2,7 @@
 
 **Website:** [agentsystem.dev](https://agentsystem.dev)
 
-AgentSystem is a skill pack for AI coding agents. It exists for one reason: **you describe a goal, the agent picks the right engineering workflow and depth, runs the checks that matter, and stops when the code is ready** — without you memorizing 37 skill names or guessing whether a change needs a quick tweak or a production gate.
+AgentSystem is a skill pack for AI coding agents. It exists for one reason: **you describe a goal, the agent picks the right engineering workflow and depth, runs the checks that matter, and stops when the code is ready** — from a single skill, so you never memorize a catalog of commands or guess whether a change needs a quick tweak or a production gate.
 
 You should almost never call individual skills yourself. Use **`/ship`**.
 
@@ -51,31 +51,23 @@ Optional overrides when you care: `mode=fast`, `mode=balanced`, `mode=production
 
 ### After `/ship` finishes
 
-When you're happy with the working tree:
-
-| Command | When |
-|---|---|
-| `/commit` | Group changes into logical commits (no push) |
-| `/commit-and-push` | Commit, then push the branch |
-| `/open-pr` | Open a GitHub PR |
-
-These are the only other skills most people need to invoke directly — they're the publish step, not the engineering step.
+`/ship` hands you a locally-verified candidate and stops — it never commits, pushes, or opens a PR. Publishing is your own git workflow: review the diff, then commit, push, and open the PR yourself. That last step is deliberately yours, not the engine's.
 
 ---
 
 ## How it works
 
-`/ship` is a router, not a monolith. You stay at the top; everything below is orchestrated for you.
+`/ship` is the only skill in your tool picker. Everything below — the delivery playbooks and the reviewer subagents — is bundled inside it and orchestrated for you.
 
 ```mermaid
 flowchart TB
     U(["/ship your goal"])
 
-    subgraph L1["① /ship — classify & route"]
+    subgraph L1["① /ship — the one skill you call"]
         direction TB
         C["Classify intent<br/>CREATE · EVOLVE · POLISH · REMOVE · FIX · AUDIT"]
         M["Pick depth<br/>fast · balanced · production"]
-        A["Announce pipeline"]
+        A["Read the matching bundled playbook<br/>& announce the pipeline"]
         C --> M --> A
     end
 
@@ -84,7 +76,7 @@ flowchart TB
     G -->|confirm first| R
     G -->|balanced / fast| R
 
-    subgraph L2["② Core workflow — one per run"]
+    subgraph L2["② Bundled playbook — one per run, followed inline"]
         direction TB
         R{"Route by intent"}
         AF["add-feature"]
@@ -101,10 +93,10 @@ flowchart TB
         R -->|AUDIT| AU
     end
 
-    subgraph L3["③ Internal — auto-invoked, don't call these"]
+    subgraph L3["③ Bundled under ship — dispatched by the playbook"]
         direction LR
-        SK["Delivery skills<br/>migrations · tests · empty/error UI · observability …"]
-        RV["Reviewer subagents<br/>security · contracts · perf · a11y · concurrency …"]
+        SK["Sub-skill playbooks<br/>migrations · tests · empty/error UI · observability …"]
+        RV["Reviewer subagents (Agent calls)<br/>security · contracts · perf · a11y · concurrency …"]
         SK --- RV
     end
 
@@ -120,11 +112,12 @@ flowchart TB
     STATE -->|"locally-verified"| READY(["Local candidate ready<br/>never commits or opens PRs"])
     STATE -->|"diagnosed / partial / blocked"| STOP(["Stop with exact evidence or blocker"])
 
-    subgraph L4["⑤ You publish — after reviewing the diff"]
+    subgraph L4["⑤ You publish — your own git workflow"]
         direction LR
-        CM["/commit"]
-        CP["/commit-and-push"]
-        PR["/open-pr"]
+        RVW["review the diff"]
+        CMT["commit & push"]
+        PRR["open the PR"]
+        RVW --> CMT --> PRR
     end
 
     READY --> L4
@@ -134,11 +127,11 @@ flowchart TB
 
 1. **Classify intent** — CREATE, EVOLVE, POLISH, REMOVE, FIX, or AUDIT — from how you phrase the request.
 2. **Pick depth** — `fast` (tiny/cosmetic), `balanced` (default), or `production` (auth, payments, migrations, webhooks, jobs, multi-subsystem work).
-3. **Route** to one core workflow and announce the pipeline before running.
+3. **Read the matching bundled playbook** and follow it inline — one per run — announcing the pipeline before running.
 4. **Challenge risky plans** — production/high-risk multi-subsystem plans get an independent read-only red-team before approval.
-5. **Fan out** to internal skills and read-only reviewers only when gates fire — migrations, tests, security/perf/contract audits, and more.
+5. **Dispatch bundled subagents** — the playbook fans out to sub-skill playbooks and read-only reviewer subagents (general-purpose Agent calls) only when gates fire — migrations, tests, security/perf/contract audits, and more.
 6. **Reconcile and verify** — parallel findings are deduplicated into one disposition ledger; complex production changes get a fresh combined-tree verifier after every mutation.
-7. **Report an honest terminal state** — `diagnosed`, `locally-verified`, `partial`, or `blocked`; only locally verified candidates are handed to publish skills.
+7. **Report an honest terminal state** — `diagnosed`, `locally-verified`, `partial`, or `blocked`; only a locally-verified candidate is handed back for you to publish.
 
 High-risk work (`production` mode) asks you to confirm before executing. `balanced` announces the plan and proceeds. `fast` just goes.
 
@@ -158,24 +151,24 @@ Update: `/plugin marketplace update agentsystem` · Uninstall: `/plugin uninstal
 ### Any agent that reads `SKILL.md` (Cursor, Codex, OpenCode, custom)
 
 ```bash
-npx @agentsystemlabs/core init                  # → ./.claude/{skills,agents}/
-npx @agentsystemlabs/core init --harness cursor # → ./.cursor/{skills,agents}/
-npx @agentsystemlabs/core init --harness codex  # → ./.codex/{skills,agents}/
+npx @agentsystemlabs/core init                  # → ./.claude/skills/ship/
+npx @agentsystemlabs/core init --harness cursor # → ./.cursor/skills/ship/
+npx @agentsystemlabs/core init --harness codex  # → ./.codex/skills/ship/
 npx @agentsystemlabs/core init --global         # user-level install
 npx @agentsystemlabs/core list                  # what's available
 ```
 
-Harnesses: `claude`, `codex`, `cursor`, `opencode`. Pass `--force` to overwrite existing files, `--skip-agents` for skills only.
+Harnesses: `claude`, `codex`, `cursor`, `opencode`. Installs the single `ship` skill with its bundled tree — the delivery playbooks and reviewer subagents come along inside it. Pass `--force` to overwrite existing files.
 
 ---
 
 ## Under the hood (you don't need to call these)
 
-Everything below is **internal plumbing** — invoked by `/ship` (or by the core workflows it routes to). Listed here so you know what you're getting, not so you memorize slash commands.
+Everything below is **bundled inside the `ship` skill** — nothing here registers separately, and nothing here shows up in your tool picker. Playbooks live at `skills/ship/playbooks/<name>/PLAYBOOK.md`; reviewer subagents at `skills/ship/subagents/<name>.md`. Listed so you know what you're getting, not so you memorize commands — there's only one, `/ship`.
 
-### Core workflows (routed by `/ship`)
+### Delivery playbooks (`/ship` reads and follows one per run)
 
-| Intent | Internal workflow | What it does |
+| Intent | Playbook | What it does |
 |---|---|---|
 | CREATE | `add-feature` | Clarify → explore → design → implement → verify → gated reviews → tests |
 | EVOLVE | `modify-feature` | Extend existing behavior; audits shifted contracts |
@@ -184,15 +177,17 @@ Everything below is **internal plumbing** — invoked by `/ship` (or by the core
 | FIX | `fix-bug` | Runtime contract trace before hypotheses; regression test when fixed |
 | AUDIT | `audit` | Whole-codebase tech-debt sweep |
 
-### Internal skills (auto-invoked when gates fire)
+### Sub-skill playbooks (dispatched when gates fire)
 
-Delivery helpers: `add-migration`, `write-tests`, `add-e2e-test`, `add-regression-test`, `add-empty-error-states`, `add-observability`, `simplify`, `propagate-ui-pattern`, `realign`, `harden-types`, `reorganize-files`, `sync-docs`, `update-changelog`, `testing-plan`, `check-pr-readiness`, `check-release-risk`
+Delivery helpers: `add-migration`, `write-tests`, `add-e2e-test`, `add-regression-test`, `add-empty-error-states`, `add-observability`, `simplify`, `propagate-ui-pattern`, `realign`, `harden-types`
 
-Scoped audits (diff or whole-app, depending on context): `audit-authz`, `audit-a11y`, `audit-perf`, `audit-responsive`, `audit-seo-meta`, `audit-analytics`
+Scoped audits (diff or whole-app, depending on context): `audit-authz`, `audit-a11y`
 
 ### Reviewer subagents (read-only, never edit files)
 
-`reviewer-authz`, `reviewer-security-regression`, `reviewer-data-integrity`, `reviewer-contracts`, `reviewer-concurrency`, `reviewer-error-boundaries`, `reviewer-loading-states`, `reviewer-accessibility-regression`, `reviewer-client-bundle`, `reviewer-observability-coverage`, `reviewer-perf`, plus helpers like `crud-surface-mapper`, `ui-pattern-inspector`, `utility-finder`, and `runtime-contract-tracer`.
+Dispatched by the playbook as general-purpose Agent calls that read `skills/ship/subagents/<name>.md` as their prompt — never as separate registered agents.
+
+`reviewer-code`, `reviewer-authz`, `reviewer-security-regression`, `reviewer-data-integrity`, `reviewer-contracts`, `reviewer-boundary-validation`, `reviewer-concurrency`, `reviewer-error-boundaries`, `reviewer-loading-states`, `reviewer-accessibility-regression`, `reviewer-client-bundle`, `reviewer-observability-coverage`, `reviewer-perf`, `reviewer-dependencies`, `reviewer-test-quality`, plus mappers like `crud-surface-mapper`, `ui-pattern-inspector`, `utility-finder`, and `runtime-contract-tracer`.
 
 Production reliability roles are also read-only:
 
@@ -202,21 +197,11 @@ Production reliability roles are also read-only:
 
 These roles are adaptive, not a fixed fleet tax. Small and ordinary changes continue through the existing fast/balanced paths.
 
-**You should not `@` or slash-command these.** They exist so `/ship` can fan out parallel audits and return severity-ranked findings with file:line refs.
+**There's nothing here to `@` or slash-command.** They exist so `/ship` can fan out parallel audits and return severity-ranked findings with file:line refs.
 
-### Occasional direct use (outside `/ship`)
+### There is only `/ship`
 
-Only when the task isn't "engineer this goal":
-
-| Skill | When |
-|---|---|
-| `/address-pr-comments` | Resolve GitHub PR review threads |
-| `/fix-pr-tests` | CI is red on a PR |
-| `/resolve-conflict` | Merge or rebase conflicts |
-| `/release` | Cut a versioned release |
-| `/handoff-codex` | Stalled task — second pass via Codex CLI |
-
-For feature work, bugs, polish, removal, and codebase audits: **use `/ship`**.
+No other slash commands to learn — `ship` is the single registered skill. Publishing (commit, push, PR, release) is your own git workflow, not a bundled command. For feature work, bugs, polish, removal, and codebase audits: **use `/ship`**.
 
 ---
 

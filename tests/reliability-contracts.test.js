@@ -14,9 +14,14 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { packageRoot } from '../cli/lib/paths.js';
 
+// New single-skill architecture: one `ship` skill with bundled workflow
+// playbooks and reviewer subagents inside it.
 const CORE = join(packageRoot, 'plugins/agentsystem-core');
-const skill = name => readFileSync(join(CORE, 'skills', name, 'SKILL.md'), 'utf8');
-const agent = name => join(CORE, 'agents', `${name}.md`);
+const SHIP = join(CORE, 'skills/ship');
+
+const shipSkill = () => readFileSync(join(SHIP, 'SKILL.md'), 'utf8');
+const playbook = name => readFileSync(join(SHIP, 'playbooks', name, 'PLAYBOOK.md'), 'utf8');
+const subagentPath = name => join(SHIP, 'subagents', `${name}.md`);
 
 function modeRow(content, mode) {
   const row = content
@@ -59,7 +64,7 @@ describe('Fleet reliability integration contracts', () => {
     };
 
     for (const name of ['plan-red-team', 'findings-reconciler', 'integration-verifier']) {
-      const path = agent(name);
+      const path = subagentPath(name);
       assert.ok(existsSync(path), `missing ${name}`);
       const content = readFileSync(path, 'utf8');
       assert.match(content, /Read-only|read-only/i, `${name} must declare read-only authority`);
@@ -72,7 +77,7 @@ describe('Fleet reliability integration contracts', () => {
   });
 
   test('production plan challenge covers architecture and relevant failure modes', () => {
-    const content = readFileSync(agent('plan-red-team'), 'utf8');
+    const content = readFileSync(subagentPath('plan-red-team'), 'utf8');
     const architectureChecks = [
       ['Scalability', /scalability/i],
       ['Reliability and failure isolation', /reliability\/failure-isolation/i],
@@ -101,8 +106,8 @@ describe('Fleet reliability integration contracts', () => {
     assert.match(content, /may remain `UNVERIFIED` under `PASS` only when .* cannot change the chosen design or its safety/);
 
     for (const name of ['add-feature', 'modify-feature']) {
-      const workflow = skill(name);
-      assert.match(workflow, /subagent_type=agentsystem-core:plan-red-team/);
+      const workflow = playbook(name);
+      assert.match(workflow, /subagents\/plan-red-team\.md/);
       for (const [label, pattern] of architectureChecks) {
         assert.match(workflow, pattern, `${name} does not require "${label}"`);
       }
@@ -110,7 +115,7 @@ describe('Fleet reliability integration contracts', () => {
   });
 
   test('feature mode matrix covers every review gate', () => {
-    const content = skill('add-feature');
+    const content = playbook('add-feature');
     const production = modeRow(content, 'production');
     const balanced = modeRow(content, 'balanced');
     const fast = modeRow(content, 'fast');
@@ -140,7 +145,7 @@ describe('Fleet reliability integration contracts', () => {
 
   test('mutating workflows finish with a post-mutation gate and secret sweep', () => {
     for (const name of ['add-feature', 'modify-feature', 'fix-bug']) {
-      const content = skill(name);
+      const content = playbook(name);
       const postAt = content.lastIndexOf('Post-step:');
       const finalAt = content.indexOf('Final candidate gate — AFTER every mutation');
       assert.ok(postAt >= 0, `${name} must define mutating post-steps`);
@@ -154,24 +159,24 @@ describe('Fleet reliability integration contracts', () => {
         /If any final-gate fix changes code|If a repair changes code|Any code change made to repair/,
       );
       assert.match(finalSection, /integration-verifier/);
-      assert.match(finalSection, /agents\/integration-verifier\.md/);
+      assert.match(finalSection, /subagents\/integration-verifier\.md/);
     }
 
-    const removal = skill('remove-feature');
+    const removal = playbook('remove-feature');
     const removalPost = removal.indexOf('Post-step:');
     const removalFinal = removal.indexOf('Final candidate gate');
     assert.ok(removalPost >= 0 && removalFinal > removalPost);
     assert.match(removal.slice(removalFinal), /canonical residue \+ hardcoded-secret sweep/);
     assert.match(removal.slice(removalFinal), /If a repair changes code, repeat/);
 
-    const polish = skill('polish-ui');
+    const polish = playbook('polish-ui');
     const polishVerify = polish.indexOf('## Verify');
     const polishFinal = polish.indexOf('Final candidate gate');
     assert.ok(polishVerify >= 0 && polishFinal > polishVerify);
     assert.match(polish.slice(polishFinal), /canonical residue \+ hardcoded-secret sweep/);
     assert.match(polish.slice(polishFinal), /If a repair changes code, repeat/);
 
-    const audit = skill('audit');
+    const audit = playbook('audit');
     const auditApply = audit.indexOf('Phase 6 — Apply');
     const auditFinal = audit.indexOf('Phase 7 — Re-verify and report');
     assert.ok(auditApply >= 0 && auditFinal > auditApply);
@@ -183,21 +188,20 @@ describe('Fleet reliability integration contracts', () => {
 
   test('review workflows reconcile parallel findings', () => {
     for (const name of ['add-feature', 'modify-feature', 'fix-bug', 'audit']) {
-      const content = skill(name);
-      assert.match(content, /subagent_type=agentsystem-core:findings-reconciler/);
-      assert.match(content, /agents\/findings-reconciler\.md/);
+      const content = playbook(name);
+      assert.match(content, /subagents\/findings-reconciler\.md/);
     }
   });
 
   test('ship propagates a durable ledger and defines honest terminal states', () => {
-    const content = skill('ship');
+    const content = shipSkill();
     assert.match(content, /references\/run-ledger\.md/);
     const step4 = content.slice(
       content.indexOf('## Step 4 — Execute'),
       content.indexOf('## Step 5 — Report'),
     );
     assert.match(step4, /run-id=<id>.*run-ledger=<absolute path>/s);
-    assert.match(step4, /routed skill must update its phase, subagent, reviewer, finding-disposition, and verification records/);
+    assert.match(step4, /update phase, subagent, reviewer, finding-disposition, and verification records/);
     const stateSection = content.slice(content.indexOf('Use exactly one terminal state:'));
     assert.match(stateSection, /\*\*`diagnosed`\*\*.*no code candidate/s);
     assert.match(stateSection, /\*\*`locally-verified`\*\*.*final post-mutation gate/s);
@@ -217,7 +221,7 @@ describe('Fleet reliability integration contracts', () => {
       'polish-ui',
       'audit',
     ]) {
-      const workflow = skill(name);
+      const workflow = playbook(name);
       const handoffAt = workflow.indexOf('Run-ledger handoff');
       const handoff = workflow.slice(handoffAt, handoffAt + 650);
       assert.ok(handoffAt >= 0, `${name} missing run-ledger handoff`);
@@ -228,7 +232,7 @@ describe('Fleet reliability integration contracts', () => {
     }
 
     const ledger = readFileSync(
-      join(CORE, 'skills/ship/references/run-ledger.md'),
+      join(SHIP, 'references/run-ledger.md'),
       'utf8',
     );
     assert.match(ledger, /<run-id>\.md/);
@@ -249,62 +253,65 @@ describe('Fleet reliability integration contracts', () => {
   });
 
   test('routing checker fails closed when reliability wiring drifts', () => {
+    const P = 'plugins/agentsystem-core/skills/ship/playbooks';
+    const SHIP_MD = 'plugins/agentsystem-core/skills/ship/SKILL.md';
+    const SUB = 'plugins/agentsystem-core/skills/ship/subagents';
     const cases = [
       {
-        path: 'plugins/agentsystem-core/skills/add-feature/SKILL.md',
+        path: `${P}/add-feature/PLAYBOOK.md`,
         mutate: content => content.replace('7a, 7b, 7c-7n (gated)', '7a, 7b, 7c-7h (gated)'),
         diagnostic: 'incomplete review/final-gate mode matrix',
       },
       {
-        path: 'plugins/agentsystem-core/skills/add-feature/SKILL.md',
-        mutate: content => content.replaceAll('agents/plan-red-team.md', 'agents/plan-fallback.md'),
-        diagnostic: 'must define inline fallback for plan-red-team',
+        path: `${P}/add-feature/PLAYBOOK.md`,
+        mutate: content => content.replaceAll('subagents/plan-red-team.md', 'subagents/plan-fallback.md'),
+        diagnostic: 'must dispatch plan-red-team',
       },
       {
-        path: 'plugins/agentsystem-core/skills/ship/SKILL.md',
+        path: SHIP_MD,
         mutate: content => content.replaceAll('references/run-ledger.md', 'references/missing-ledger.md'),
         diagnostic: 'missing run-ledger/terminal-state token',
       },
       {
-        path: 'plugins/agentsystem-core/skills/modify-feature/SKILL.md',
+        path: `${P}/modify-feature/PLAYBOOK.md`,
         mutate: content => content.replaceAll('Final candidate gate', 'Final output gate'),
         diagnostic: 'missing final post-mutation candidate gate',
       },
       {
-        path: 'plugins/agentsystem-core/skills/fix-bug/SKILL.md',
+        path: `${P}/fix-bug/PLAYBOOK.md`,
         mutate: content => content.replaceAll('hardcoded-secret sweep', 'credential check'),
         diagnostic: 'final gate must run the canonical hardcoded-secret sweep',
       },
       {
-        path: 'plugins/agentsystem-core/skills/remove-feature/SKILL.md',
+        path: `${P}/remove-feature/PLAYBOOK.md`,
         mutate: content => content.replaceAll('Final candidate gate', 'Final output gate'),
         diagnostic: 'missing final post-mutation candidate gate',
       },
       {
-        path: 'plugins/agentsystem-core/skills/audit/SKILL.md',
+        path: `${P}/audit/PLAYBOOK.md`,
         mutate: content => content.replace('Phase 7 — Re-verify and report', 'Phase 7 — Report'),
         diagnostic: 'final audit apply gate must reverify and run the secret sweep',
       },
       {
-        path: 'plugins/agentsystem-core/skills/polish-ui/SKILL.md',
+        path: `${P}/polish-ui/PLAYBOOK.md`,
         mutate: content => content.replaceAll('run-ledger=', 'ledger-path='),
         diagnostic: 'must accept and update the /ship run ledger',
       },
       {
-        path: 'plugins/agentsystem-core/skills/audit/SKILL.md',
+        path: `${P}/audit/PLAYBOOK.md`,
         mutate: content => content.replaceAll(
-          'subagent_type=agentsystem-core:findings-reconciler',
-          'subagent_type=agentsystem-core:reviewer-code',
+          'subagents/findings-reconciler.md',
+          'subagents/reviewer-code.md',
         ),
         diagnostic: 'must dispatch findings-reconciler',
       },
       {
-        path: 'plugins/agentsystem-core/agents/plan-red-team.md',
+        path: `${SUB}/plan-red-team.md`,
         mutate: () => null,
         diagnostic: 'missing reliability agent "plan-red-team"',
       },
       {
-        path: 'plugins/agentsystem-core/skills/ship/SKILL.md',
+        path: SHIP_MD,
         mutate: content => `${content}\nCode is production-ready\n`,
         diagnostic: 'must not claim an unconditional production-ready terminal state',
       },

@@ -4,14 +4,14 @@
     "name": "webdevcody"
   },
   "metadata": {
-    "description": "AgentSystem skill collection — feature delivery, debugging, planning, UX, and code-quality skills.",
-    "version": "0.54.1"
+    "description": "AgentSystem — a single ship skill orchestrating the full engineering pipeline via bundled playbooks and reviewer subagents.",
+    "version": "0.55.0"
   },
   "plugins": [
     {
       "name": "agentsystem-core",
       "source": "./plugins/agentsystem-core",
-      "description": "The full engineering pipeline — feature delivery, debugging, PR workflow, UX polish, planning, backend, releases, and reviewer subagents."
+      "description": "One ship skill. Classifies the goal, picks the depth, runs the matching bundled workflow playbook (feature delivery, modification, debugging, deletion, audit), and dispatches bundled reviewer subagents. Stops at code-ready."
     }
   ]
 }

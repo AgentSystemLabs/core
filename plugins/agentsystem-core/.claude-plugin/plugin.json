@@ -1,7 +1,7 @@
 {
   "name": "agentsystem-core",
-  "version": "0.54.1",
-  "description": "AgentSystem core skill collection — ship orchestration, feature delivery, feature modification, debugging, deletion, and code-quality skills.",
+  "version": "0.55.0",
+  "description": "AgentSystem — a single `ship` skill that orchestrates the full engineering pipeline (feature delivery, modification, debugging, deletion, audit) via bundled workflow playbooks and reviewer subagents.",
   "author": {
     "name": "webdevcody"
   }
