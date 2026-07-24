@@ -102,7 +102,7 @@ describe('Fleet reliability integration contracts', () => {
 
     for (const name of ['add-feature', 'modify-feature']) {
       const workflow = skill(name);
-      assert.match(workflow, /subagent_type=plan-red-team/);
+      assert.match(workflow, /subagent_type=agentsystem-core:plan-red-team/);
       for (const [label, pattern] of architectureChecks) {
         assert.match(workflow, pattern, `${name} does not require "${label}"`);
       }
@@ -184,7 +184,7 @@ describe('Fleet reliability integration contracts', () => {
   test('review workflows reconcile parallel findings', () => {
     for (const name of ['add-feature', 'modify-feature', 'fix-bug', 'audit']) {
       const content = skill(name);
-      assert.match(content, /subagent_type=findings-reconciler/);
+      assert.match(content, /subagent_type=agentsystem-core:findings-reconciler/);
       assert.match(content, /agents\/findings-reconciler\.md/);
     }
   });
@@ -293,8 +293,8 @@ describe('Fleet reliability integration contracts', () => {
       {
         path: 'plugins/agentsystem-core/skills/audit/SKILL.md',
         mutate: content => content.replaceAll(
-          'subagent_type=findings-reconciler',
-          'subagent_type=reviewer-code',
+          'subagent_type=agentsystem-core:findings-reconciler',
+          'subagent_type=agentsystem-core:reviewer-code',
         ),
         diagnostic: 'must dispatch findings-reconciler',
       },

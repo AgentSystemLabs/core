@@ -133,7 +133,8 @@ const agentTokenSources = [
 ];
 
 for (const { label, content } of agentTokenSources) {
-  for (const m of content.matchAll(/subagent_type=([a-z0-9-]+)/g)) {
+  // Accept an optional plugin prefix (e.g. `agentsystem-core:`) before the agent name.
+  for (const m of content.matchAll(/subagent_type=(?:[a-z][a-z0-9-]*:)?([a-z0-9-]+)/g)) {
     if (!agentNames.has(m[1])) {
       errors.push(`${label}: references unknown subagent_type "${m[1]}"`);
     }
@@ -318,7 +319,8 @@ for (const [agentName, callers] of Object.entries(reliabilityAgents)) {
   }
   for (const callerName of callers) {
     const caller = byName.get(callerName);
-    if (!caller?.content.includes(`subagent_type=${agentName}`)) {
+    const dispatchRe = new RegExp(`subagent_type=(?:[a-z][a-z0-9-]*:)?${agentName}(?![a-z0-9-])`);
+    if (!dispatchRe.test(caller?.content ?? '')) {
       errors.push(`${caller?.key ?? callerName}: must dispatch ${agentName}`);
     }
     if (!caller?.content.includes(`agents/${agentName}.md`)) {
